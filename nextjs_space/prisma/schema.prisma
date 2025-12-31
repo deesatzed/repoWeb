@@ -1,0 +1,196 @@
+generator client {
+    provider = "prisma-client-js"
+    binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  accounts      Account[]
+  sessions      Session[]
+  githubConnection GitHubConnection?
+  portfolioSettings PortfolioSettings?
+  projects      Project[]
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model GitHubConnection {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  githubUsername  String
+  githubToken     String   @db.Text // Encrypted
+  lastSyncedAt    DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repositories    Repository[]
+}
+
+model Repository {
+  id                  String   @id @default(cuid())
+  githubConnectionId  String
+  githubId            BigInt   @unique
+  name                String
+  fullName            String
+  description         String?  @db.Text
+  htmlUrl             String
+  homepage            String?
+  isPrivate           Boolean
+  isFork              Boolean
+  language            String?
+  stargazersCount     Int      @default(0)
+  forksCount          Int      @default(0)
+  openIssuesCount     Int      @default(0)
+  watchersCount       Int      @default(0)
+  size                Int      @default(0)
+  defaultBranch       String?
+  topics              String[]  @default([])
+  createdAt           DateTime
+  updatedAt           DateTime
+  pushedAt            DateTime?
+  readmeContent       String?  @db.Text
+  languages           Json?    // Language breakdown
+  isExcluded          Boolean  @default(false)
+  isFeatured          Boolean  @default(false)
+  customCategory      String?
+  sortOrder           Int      @default(0)
+  lastAnalyzedAt      DateTime?
+  projectId           String?  // Link to grouped project
+  githubConnection    GitHubConnection @relation(fields: [githubConnectionId], references: [id], onDelete: Cascade)
+  project             Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  aiAnalysis          AIAnalysis?
+  
+  @@index([githubConnectionId])
+  @@index([isFeatured])
+  @@index([isExcluded])
+  @@index([projectId])
+}
+
+model AIAnalysis {
+  id                    String   @id @default(cuid())
+  repositoryId          String   @unique
+  complexityScore       Float?   // 0-100
+  codeQualityScore      Float?   // 0-100
+  projectType           String?  // e.g., "Full-Stack Web App", "CLI Tool", "Library"
+  techStack             String[] @default([])
+  keyFeatures           String[] @default([])
+  strengths             String[] @default([])
+  architecturePatterns  String[] @default([])
+  summary               String?  @db.Text
+  employerHighlights    String?  @db.Text // Most impressive aspects for employers
+  skillsDemonstrated    String[] @default([])
+  linesOfCode           Int?
+  fileCount             Int?
+  hasTests              Boolean  @default(false)
+  hasDocumentation      Boolean  @default(false)
+  hasCiCd               Boolean  @default(false)
+  contributionPattern   String?  // "Solo Project", "Team Collaboration", "Open Source"
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  repository            Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+}
+
+model PortfolioSettings {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  displayName           String?
+  bio                   String?  @db.Text
+  location              String?
+  website               String?
+  twitter               String?
+  linkedin              String?
+  hidePrivateRepoNames  Boolean  @default(false)
+  theme                 String   @default("dark") // "dark" or "light"
+  accentColor           String   @default("#8B5CF6") // Hex color
+  showActivityGraph     Boolean  @default(true)
+  showLanguageStats     Boolean  @default(true)
+  showSkillsBreakdown   Boolean  @default(true)
+  featuredSection       String?  @db.Text // JSON config for featured section
+  customSections        Json?    // Custom sections configuration
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Project {
+  id                   String        @id @default(cuid())
+  userId               String
+  user                 User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  name                 String
+  description          String?       @db.Text
+  displayOrder         Int           @default(0)
+  isVisible            Boolean       @default(true)
+  
+  repositories         Repository[]
+  aiAnalysis           ProjectAnalysis?
+  
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  
+  @@index([userId])
+  @@index([displayOrder])
+}
+
+model ProjectAnalysis {
+  id                   String        @id @default(cuid())
+  projectId            String        @unique
+  project              Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  // Skills-focused analysis
+  technicalSkills      String[]      @default([])
+  designDecisions      String?       @db.Text
+  novelApproaches      String?       @db.Text
+  testingStrategy      String?       @db.Text
+  problemsSolved       String?       @db.Text
+  skillDemonstration   String?       @db.Text
+  architectureInsights String?       @db.Text
+  techStack            String[]      @default([])
+  
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+}
