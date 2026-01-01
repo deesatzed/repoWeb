@@ -20,7 +20,8 @@ Required:
 - `DATABASE_URL`
 - `NEXTAUTH_SECRET`
 - `ENCRYPTION_KEY` (must be 32-byte hex)
-- `ABACUSAI_API_KEY`
+- `OPENROUTER_API_KEY`
+- `OPENROUTER_MODEL` (e.g. `mistralai/devstral-2512`)
 
 OAuth (needed for real sign-in + GitHub sync):
 

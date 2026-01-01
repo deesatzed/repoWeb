@@ -103,6 +103,7 @@ model Repository {
   githubConnection    GitHubConnection @relation(fields: [githubConnectionId], references: [id], onDelete: Cascade)
   project             Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
   aiAnalysis          AIAnalysis?
+  codeAssetOccurrences CodeAssetOccurrence[]
   
   @@index([githubConnectionId])
   @@index([isFeatured])
@@ -193,4 +194,44 @@ model ProjectAnalysis {
   
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
+}
+
+model CodeAsset {
+  id              String                @id @default(cuid())
+  fingerprint     String                @unique // SHA256 of the normalized code content
+  name            String                // Function or Class name
+  type            String                // "function", "class", "component"
+  content         String                @db.Text
+  language        String                // "typescript", "python", etc.
+  complexity      Int                   @default(0)
+  frequency       Int                   @default(1)
+  
+  // Stigmergic Value = (Complexity^2) / (Frequency + 1)
+  valueScore      Float                 @default(0)
+  
+  occurrences     CodeAssetOccurrence[]
+  
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([valueScore])
+  @@index([complexity])
+  @@index([frequency])
+}
+
+model CodeAssetOccurrence {
+  id            String     @id @default(cuid())
+  codeAssetId   String
+  codeAsset     CodeAsset  @relation(fields: [codeAssetId], references: [id], onDelete: Cascade)
+  
+  repositoryId  String?
+  repository    Repository? @relation(fields: [repositoryId], references: [id], onDelete: SetNull)
+  
+  repoName      String     // Denormalized for local/unlinked repos
+  filePath      String
+  
+  createdAt     DateTime   @default(now())
+
+  @@unique([codeAssetId, repoName, filePath])
+  @@index([repositoryId])
 }

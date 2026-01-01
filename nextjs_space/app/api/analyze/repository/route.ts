@@ -1,11 +1,12 @@
-export const dynamic = 'force-dynamic';
-
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import prisma from '@/lib/db';
 import { redactForLLM } from '@/lib/redaction';
 import { RepositoryAnalysisSchema } from '@/lib/analysis-schemas';
+import { analyzeJSON } from '@/lib/llm';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
@@ -67,42 +68,6 @@ export async function POST(request: Request) {
       isFork: repository.isFork,
     };
 
-    async function fetchValidatedAnalysis(): Promise<unknown> {
-      const messages = [{ role: 'user', content: prompt }];
-
-      const response = await fetch('https://apps.abacus.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.ABACUSAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4.1-mini',
-          messages,
-          stream: false,
-          max_tokens: 2000,
-          response_format: { type: 'json_object' },
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('LLM API request failed');
-      }
-
-      const json = await response.json();
-      const content = json?.choices?.[0]?.message?.content;
-      if (typeof content !== 'string' || !content.trim()) {
-        throw new Error('LLM returned empty response');
-      }
-
-      const parsed = JSON.parse(content);
-      const validated = RepositoryAnalysisSchema.safeParse(parsed);
-      if (!validated.success) {
-        throw new Error('LLM response validation failed');
-      }
-      return validated.data;
-    }
-
     const prompt = `You are analyzing a software project to assess the BUILDER's capabilities, NOT to advertise the application itself. Focus on what this project demonstrates about the developer's technical skills, decision-making, and engineering maturity.
 
 Repository Information:
@@ -155,151 +120,89 @@ Respond with raw JSON only in this exact structure:
 
 Respond with raw JSON only. Do not include code blocks, markdown, or any other formatting.`;
 
-    const messages = [
-      { role: 'user', content: prompt },
-    ];
-
-    const response = await fetch('https://apps.abacus.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.ABACUSAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4.1-mini',
-        messages: messages,
-        stream: true,
-        max_tokens: 2000,
-        response_format: { type: 'json_object' },
-      }),
-    });
-
-    if (!response?.ok) {
-      throw new Error('LLM API request failed');
-    }
-
+    // Create a stream for SSE
     const stream = new ReadableStream({
       async start(controller) {
-        const reader = response?.body?.getReader();
-        const decoder = new TextDecoder();
         const encoder = new TextEncoder();
-        let buffer = '';
-        let partialRead = '';
 
         try {
-          while (true) {
-            const { done, value } = (await reader?.read()) ?? {};
-            if (done) break;
-            
-            partialRead += decoder.decode(value ?? new Uint8Array(), { stream: true });
-            let lines = partialRead.split('\n');
-            partialRead = lines.pop() ?? '';
-            
-            for (const line of lines ?? []) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6);
-                if (data === '[DONE]') {
-                  // Parse and save the analysis
-                  let analysis: unknown;
-                  try {
-                    analysis = JSON.parse(buffer);
-                  } catch {
-                    analysis = null;
-                  }
+          // 1. Send "processing" status
+          const progressData = JSON.stringify({
+            status: 'processing',
+            message: 'Analyzing repository...',
+          });
+          controller.enqueue(encoder.encode(`data: ${progressData}\n\n`));
 
-                  let validated = RepositoryAnalysisSchema.safeParse(analysis);
-                  if (!validated.success) {
-                    // Safe retry using non-stream completion
-                    const retry = await fetchValidatedAnalysis();
-                    validated = RepositoryAnalysisSchema.safeParse(retry);
-                  }
+          // 2. Call OpenRouter
+          const rawAnalysis = await analyzeJSON(prompt, 'You are a senior technical recruiter and engineering manager.');
 
-                  if (!validated.success) {
-                    const errorData = JSON.stringify({
-                      status: 'error',
-                      message: 'Analysis validation failed',
-                    });
-                    controller.enqueue(encoder.encode(`data: ${errorData}\n\n`));
-                    controller.close();
-                    return;
-                  }
-
-                  const finalAnalysis = validated.data;
-                  
-                  // Save to database
-                  await prisma.aIAnalysis.upsert({
-                    where: { repositoryId: repository.id },
-                    update: {
-                      complexityScore: finalAnalysis.complexityScore,
-                      codeQualityScore: finalAnalysis.codeQualityScore,
-                      projectType: finalAnalysis.projectType,
-                      techStack: finalAnalysis.techStack,
-                      keyFeatures: finalAnalysis.keyFeatures,
-                      strengths: finalAnalysis.strengths,
-                      architecturePatterns: finalAnalysis.architecturePatterns,
-                      summary: finalAnalysis.summary,
-                      employerHighlights: finalAnalysis.employerHighlights,
-                      skillsDemonstrated: finalAnalysis.skillsDemonstrated,
-                      linesOfCode: finalAnalysis.linesOfCode ?? null,
-                      fileCount: finalAnalysis.fileCount ?? null,
-                      hasTests: finalAnalysis.hasTests,
-                      hasDocumentation: finalAnalysis.hasDocumentation,
-                      hasCiCd: finalAnalysis.hasCiCd,
-                      contributionPattern: finalAnalysis.contributionPattern,
-                      updatedAt: new Date(),
-                    },
-                    create: {
-                      repositoryId: repository.id,
-                      complexityScore: finalAnalysis.complexityScore,
-                      codeQualityScore: finalAnalysis.codeQualityScore,
-                      projectType: finalAnalysis.projectType,
-                      techStack: finalAnalysis.techStack,
-                      keyFeatures: finalAnalysis.keyFeatures,
-                      strengths: finalAnalysis.strengths,
-                      architecturePatterns: finalAnalysis.architecturePatterns,
-                      summary: finalAnalysis.summary,
-                      employerHighlights: finalAnalysis.employerHighlights,
-                      skillsDemonstrated: finalAnalysis.skillsDemonstrated,
-                      linesOfCode: finalAnalysis.linesOfCode ?? null,
-                      fileCount: finalAnalysis.fileCount ?? null,
-                      hasTests: finalAnalysis.hasTests,
-                      hasDocumentation: finalAnalysis.hasDocumentation,
-                      hasCiCd: finalAnalysis.hasCiCd,
-                      contributionPattern: finalAnalysis.contributionPattern,
-                    },
-                  });
-
-                  // Update repository last analyzed time
-                  await prisma.repository.update({
-                    where: { id: repository.id },
-                    data: { lastAnalyzedAt: new Date() },
-                  });
-
-                  const finalData = JSON.stringify({
-                    status: 'completed',
-                    result: finalAnalysis,
-                  });
-                  controller.enqueue(encoder.encode(`data: ${finalData}\n\n`));
-                  controller.close();
-                  return;
-                }
-                
-                try {
-                  const parsed = JSON.parse(data);
-                  buffer += parsed?.choices?.[0]?.delta?.content || '';
-                  const progressData = JSON.stringify({
-                    status: 'processing',
-                    message: 'Analyzing repository...',
-                  });
-                  controller.enqueue(encoder.encode(`data: ${progressData}\n\n`));
-                } catch (e) {
-                  // Skip invalid JSON
-                }
-              }
-            }
+          // 3. Validate
+          const validated = RepositoryAnalysisSchema.safeParse(rawAnalysis);
+          if (!validated.success) {
+            throw new Error('Analysis validation failed: ' + validated.error.message);
           }
+
+          const finalAnalysis = validated.data;
+
+          // 4. Save to DB
+          await prisma.aIAnalysis.upsert({
+            where: { repositoryId: repository.id },
+            update: {
+              complexityScore: finalAnalysis.complexityScore,
+              codeQualityScore: finalAnalysis.codeQualityScore,
+              projectType: finalAnalysis.projectType,
+              techStack: finalAnalysis.techStack,
+              keyFeatures: finalAnalysis.keyFeatures,
+              strengths: finalAnalysis.strengths,
+              architecturePatterns: finalAnalysis.architecturePatterns,
+              summary: finalAnalysis.summary,
+              employerHighlights: finalAnalysis.employerHighlights,
+              skillsDemonstrated: finalAnalysis.skillsDemonstrated,
+              linesOfCode: finalAnalysis.linesOfCode ?? null,
+              fileCount: finalAnalysis.fileCount ?? null,
+              hasTests: finalAnalysis.hasTests,
+              hasDocumentation: finalAnalysis.hasDocumentation,
+              hasCiCd: finalAnalysis.hasCiCd,
+              contributionPattern: finalAnalysis.contributionPattern,
+              updatedAt: new Date(),
+            },
+            create: {
+              repositoryId: repository.id,
+              complexityScore: finalAnalysis.complexityScore,
+              codeQualityScore: finalAnalysis.codeQualityScore,
+              projectType: finalAnalysis.projectType,
+              techStack: finalAnalysis.techStack,
+              keyFeatures: finalAnalysis.keyFeatures,
+              strengths: finalAnalysis.strengths,
+              architecturePatterns: finalAnalysis.architecturePatterns,
+              summary: finalAnalysis.summary,
+              employerHighlights: finalAnalysis.employerHighlights,
+              skillsDemonstrated: finalAnalysis.skillsDemonstrated,
+              linesOfCode: finalAnalysis.linesOfCode ?? null,
+              fileCount: finalAnalysis.fileCount ?? null,
+              hasTests: finalAnalysis.hasTests,
+              hasDocumentation: finalAnalysis.hasDocumentation,
+              hasCiCd: finalAnalysis.hasCiCd,
+              contributionPattern: finalAnalysis.contributionPattern,
+            },
+          });
+
+          // Update repository last analyzed time
+          await prisma.repository.update({
+            where: { id: repository.id },
+            data: { lastAnalyzedAt: new Date() },
+          });
+
+          // 5. Send "completed" status
+          const finalData = JSON.stringify({
+            status: 'completed',
+            result: finalAnalysis,
+          });
+          controller.enqueue(encoder.encode(`data: ${finalData}\n\n`));
+          controller.close();
+
         } catch (error: any) {
-          console.error('Stream error:', error);
+          console.error('Analysis error:', error);
           const errorData = JSON.stringify({
             status: 'error',
             message: error?.message || 'Analysis failed',

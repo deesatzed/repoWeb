@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 import { useState } from 'react';
 import ProjectCard from './project-card';
 import RepositoryCard from './repository-card';
+import EngineeringDNA from './engineering-dna';
 
 interface PortfolioClientProps {
   data: any;
@@ -238,6 +239,9 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
           )}
         </div>
       </section>
+
+      {/* Engineering DNA Section */}
+      <EngineeringDNA username={githubUsername} />
 
       {/* Major Projects Section */}
       {projects?.length > 0 && (
