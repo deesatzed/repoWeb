@@ -72,7 +72,8 @@ function getFingerprint(code: string): string {
   return crypto.createHash('sha256').update(normalized).digest('hex');
 }
 
-async function mineDirectory(rootPath: string) {
+async function mineDirectory(targetPath: string) {
+  const rootPath = path.resolve(targetPath);
   console.log(`⛏️  Mining diamonds in: ${rootPath}`);
   
   const files = glob.sync('**/*.{ts,tsx,js,jsx}', {
@@ -88,13 +89,15 @@ async function mineDirectory(rootPath: string) {
   });
 
   let atomsFound = 0;
-  let newDiamonds = 0;
+  
+  // Use the folder name as the repository name
+  const repoName = path.basename(rootPath);
+  console.log(`📦 Repo Name detected: ${repoName}`);
 
   for (const filePath of files) {
     try {
       const sourceFile = project.addSourceFileAtPath(filePath);
       const relativePath = path.relative(rootPath, filePath);
-      const repoName = path.basename(rootPath);
 
       // Extract Classes
       const classes = sourceFile.getClasses();
