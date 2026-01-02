@@ -27,7 +27,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ settings: newSettings });
     }
 
-    return NextResponse.json({ settings });
+    // Parse featuredSection if it exists
+    const parsedSettings = {
+      ...settings,
+      featuredSection: settings.featuredSection ? JSON.parse(settings.featuredSection) : null,
+    };
+
+    return NextResponse.json({ settings: parsedSettings });
   } catch (error: any) {
     console.error('Fetch settings error:', error);
     return NextResponse.json(
@@ -48,6 +54,11 @@ export async function POST(request: Request) {
     const body = await request.json();
     const updates = body ?? {};
 
+    // Stringify featuredSection if it's an object
+    if (updates.featuredSection && typeof updates.featuredSection === 'object') {
+      updates.featuredSection = JSON.stringify(updates.featuredSection);
+    }
+
     const settings = await prisma.portfolioSettings.upsert({
       where: { userId: session.user.id },
       update: updates,
@@ -57,7 +68,12 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json({ settings });
+    const parsedSettings = {
+      ...settings,
+      featuredSection: settings.featuredSection ? JSON.parse(settings.featuredSection) : null,
+    };
+
+    return NextResponse.json({ settings: parsedSettings });
   } catch (error: any) {
     console.error('Update settings error:', error);
     return NextResponse.json(

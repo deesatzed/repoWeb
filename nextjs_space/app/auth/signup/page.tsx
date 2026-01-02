@@ -87,13 +87,14 @@ export default function SignUpPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 mb-4">
-            <Github className="w-10 h-10 text-purple-400" />
-            <span className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent">
-              DevShowcase
-            </span>
+            <div className="text-center">
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent mb-2">
+                RepoNexus
+              </h1>
+              <p className="text-slate-400">Create your account</p>
+            </div>
+            <p className="text-slate-400">Start building your impressive portfolio</p>
           </Link>
-          <h1 className="text-3xl font-bold text-white mb-2">Create Account</h1>
-          <p className="text-slate-400">Start building your impressive portfolio</p>
         </div>
 
         <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-8 border border-slate-700">

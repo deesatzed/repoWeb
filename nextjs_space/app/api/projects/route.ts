@@ -29,7 +29,31 @@ export async function GET(req: NextRequest) {
       orderBy: { displayOrder: 'asc' },
     });
 
-    return NextResponse.json({ projects });
+    const parseJsonArray = (val: string | string[] | null | undefined) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      try {
+        return JSON.parse(val || '[]');
+      } catch {
+        return [];
+      }
+    };
+
+    const serializedProjects = projects.map((project: any) => ({
+      ...project,
+      repositories: project.repositories.map((repo: any) => ({
+        ...repo,
+        githubId: repo.githubId.toString(),
+        topics: parseJsonArray(repo.topics),
+      })),
+      aiAnalysis: project.aiAnalysis ? {
+        ...project.aiAnalysis,
+        technicalSkills: parseJsonArray(project.aiAnalysis.technicalSkills),
+        techStack: parseJsonArray(project.aiAnalysis.techStack),
+      } : null,
+    }));
+
+    return NextResponse.json({ projects: serializedProjects });
   } catch (error) {
     console.error('Error fetching projects:', error);
     return NextResponse.json(
@@ -96,10 +120,35 @@ export async function POST(req: NextRequest) {
       where: { id: project.id },
       include: {
         repositories: true,
+        aiAnalysis: true,
       },
     });
 
-    return NextResponse.json({ project: updatedProject });
+    const parseJsonArray = (val: string | string[] | null | undefined) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      try {
+        return JSON.parse(val || '[]');
+      } catch {
+        return [];
+      }
+    };
+
+    const serializedProject = updatedProject ? {
+      ...updatedProject,
+      repositories: updatedProject.repositories.map((repo: any) => ({
+        ...repo,
+        githubId: repo.githubId.toString(),
+        topics: parseJsonArray(repo.topics),
+      })),
+      aiAnalysis: updatedProject.aiAnalysis ? {
+        ...updatedProject.aiAnalysis,
+        technicalSkills: parseJsonArray(updatedProject.aiAnalysis.technicalSkills),
+        techStack: parseJsonArray(updatedProject.aiAnalysis.techStack),
+      } : null,
+    } : null;
+
+    return NextResponse.json({ project: serializedProject });
   } catch (error) {
     console.error('Error creating project:', error);
     return NextResponse.json(

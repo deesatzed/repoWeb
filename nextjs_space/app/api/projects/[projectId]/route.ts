@@ -76,7 +76,31 @@ export async function PATCH(
       },
     });
 
-    return NextResponse.json({ project: updatedProject });
+    const parseJsonArray = (val: string | string[] | null | undefined) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      try {
+        return JSON.parse(val || '[]');
+      } catch {
+        return [];
+      }
+    };
+
+    const serializedProject = updatedProject ? {
+      ...updatedProject,
+      repositories: updatedProject.repositories.map((repo: any) => ({
+        ...repo,
+        githubId: repo.githubId.toString(),
+        topics: parseJsonArray(repo.topics),
+      })),
+      aiAnalysis: updatedProject.aiAnalysis ? {
+        ...updatedProject.aiAnalysis,
+        technicalSkills: parseJsonArray(updatedProject.aiAnalysis.technicalSkills),
+        techStack: parseJsonArray(updatedProject.aiAnalysis.techStack),
+      } : null,
+    } : null;
+
+    return NextResponse.json({ project: serializedProject });
   } catch (error) {
     console.error('Error updating project:', error);
     return NextResponse.json(

@@ -17,7 +17,7 @@ import { toast } from 'sonner';
 import { useState } from 'react';
 import ProjectCard from './project-card';
 import RepositoryCard from './repository-card';
-import EngineeringDNA from './engineering-dna';
+import EngineeringDNA from '@/components/engineering-dna';
 
 interface PortfolioClientProps {
   data: any;
@@ -91,9 +91,11 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2">
-              <Github className="w-8 h-8 text-purple-400" />
-              <span className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent">
-                DevShowcase
+              <div className="bg-gradient-to-br from-purple-600 to-blue-600 p-2 rounded-lg">
+                <Code2 className="w-5 h-5 text-white" />
+              </div>
+              <span className="text-2xl font-bold text-white">
+                RepoNexus
               </span>
             </Link>
             <div className="flex items-center gap-3">
@@ -138,27 +140,31 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
               <Briefcase className="w-4 h-4 text-purple-400" />
               <span className="text-sm text-purple-300">Developer Portfolio</span>
             </div>
-            <h1 className="text-6xl font-bold mb-4 bg-gradient-to-r from-white via-purple-200 to-cyan-200 bg-clip-text text-transparent">
+            <h1 className="text-6xl font-bold mb-4 text-white">
               {githubUsername}
             </h1>
             <p className="text-xl text-slate-300 max-w-2xl mx-auto mb-8">
               Technical skills and engineering capabilities demonstrated through real projects
             </p>
             
-            {/* Quick Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.1 }}
-                className="bg-slate-800/50 backdrop-blur-lg border border-slate-700 rounded-2xl p-6"
-              >
-                <div className="flex items-center justify-center gap-3 mb-2">
-                  <Briefcase className="w-6 h-6 text-purple-400" />
-                  <span className="text-3xl font-bold text-white">{projects?.length ?? 0}</span>
-                </div>
-                <p className="text-slate-400">Major Projects</p>
-              </motion.div>
+              {/* Quick Stats - Centered Grid based on available items */}
+              <div className={`grid gap-6 max-w-4xl mx-auto ${
+                projects?.length > 0 ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-1 md:grid-cols-2 max-w-2xl'
+              }`}>
+              {projects?.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, delay: 0.1 }}
+                  className="bg-slate-800/50 backdrop-blur-lg border border-slate-700 rounded-2xl p-6"
+                >
+                  <div className="flex items-center justify-center gap-3 mb-2">
+                    <Briefcase className="w-6 h-6 text-purple-400" />
+                    <span className="text-3xl font-bold text-white">{projects?.length ?? 0}</span>
+                  </div>
+                  <p className="text-slate-400">Major Projects</p>
+                </motion.div>
+              )}
               
               <motion.div
                 initial={{ opacity: 0, y: 20 }}

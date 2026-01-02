@@ -6,7 +6,7 @@ This project runs from `nextjs_space/`.
 
 - Node.js (the repo currently works with Node 20.x)
 - Yarn classic (`yarn -v` shows `1.x`)
-- Local Postgres running on `localhost:5432`
+- SQLite (included via Prisma, no separate install needed)
 
 ## Environment
 
@@ -17,42 +17,31 @@ Copy and fill environment variables:
 
 Required:
 
-- `DATABASE_URL`
+- `DATABASE_URL="file:./dev.db"`
 - `NEXTAUTH_SECRET`
 - `ENCRYPTION_KEY` (must be 32-byte hex)
 - `OPENROUTER_API_KEY`
-- `OPENROUTER_MODEL` (e.g. `mistralai/devstral-2512`)
+- `OPENROUTER_MODEL` (defaults to `deepseek/deepseek-chat`)
 
 OAuth (needed for real sign-in + GitHub sync):
 
 - `GITHUB_CLIENT_ID`
 - `GITHUB_CLIENT_SECRET`
 
-## Local Postgres (recommended for dev)
+## Database Setup
 
-We validated local Postgres using a Unix-socket connection (avoids TCP password rules).
+We use SQLite for simplicity. The database file will be created wherever `DATABASE_URL` points.
 
-Use this `DATABASE_URL` for local dev:
+Create and seed the DB:
 
-- `postgresql://o2satz@localhost/devshowcase?host=/tmp&schema=public`
-
-Create the DB (if needed):
-
-- `createdb devshowcase`
-
-## Prisma schema sync
-
-This repo currently has **no** `prisma/migrations/` folder.
-
-For local dev, sync the DB schema from `prisma/schema.prisma`:
-
-- `DATABASE_URL='postgresql://o2satz@localhost/devshowcase?host=/tmp&schema=public' yarn prisma db push`
+- `yarn prisma db push`
+- `yarn prisma db seed` (optional, for test data)
 
 ## Run the app
 
 From `nextjs_space/`:
 
-- `DATABASE_URL='postgresql://o2satz@localhost/devshowcase?host=/tmp&schema=public' yarn dev`
+- `yarn dev`
 
 Then open:
 
@@ -72,6 +61,17 @@ From `nextjs_space/`:
 - Dashboard renders (requires auth): `/dashboard`
 - Public portfolio route: `/portfolio/[username]`
 
-## Troubleshooting
+## LLM model + prompts
 
-- Prisma `P1010` using `localhost:5432` typically means TCP auth requires a password. Use the Unix-socket URL shown above (`host=/tmp`).
+We call OpenRouter using an OpenAI-compatible client wrapper in `lib/llm.ts`.
+
+- **Model selection** is controlled by `OPENROUTER_MODEL`.
+- **API key** is `OPENROUTER_API_KEY`.
+
+The system prompts are currently defined inline in the analysis routes:
+
+- **Repository analysis** (`app/api/analyze/repository/route.ts`)
+  - System prompt: `You are a senior technical recruiter and engineering manager.`
+- **Project analysis** (`app/api/analyze/project/route.ts`)
+  - System prompt: `You are a CTO-level engineering manager assessing a candidate's portfolio project for technical growth and architectural maturity.`
+

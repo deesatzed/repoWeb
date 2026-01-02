@@ -19,8 +19,8 @@ function getClient(): OpenAI {
     apiKey: OPENROUTER_API_KEY,
     // OpenRouter specific headers
     defaultHeaders: {
-      'HTTP-Referer': process.env.NEXTAUTH_URL || 'http://localhost:3000', 
-      'X-Title': 'DevShowcase',
+      'HTTP-Referer': 'https://reponexus.dev', 
+      'X-Title': 'RepoNexus',
     },
   });
 

@@ -124,6 +124,21 @@ export default function RepositoryCard({ repository, featured = false }: Reposit
                 )}
               </div>
 
+              {/* Key Features - Detailed */}
+              {repository?.aiAnalysis?.keyFeatures?.length > 0 && (
+                <div className="mb-4 space-y-2">
+                  <p className="text-xs text-slate-500 font-medium">Key Features</p>
+                  <ul className="space-y-1">
+                    {repository.aiAnalysis.keyFeatures.slice(0, 4).map((feature: string, idx: number) => (
+                      <li key={idx} className="text-sm text-slate-300 flex items-start gap-2">
+                        <span className="w-1 h-1 rounded-full bg-cyan-500 mt-2 flex-shrink-0" />
+                        <span>{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {/* What This Demonstrates - KEY SECTION */}
               {repository?.aiAnalysis?.employerHighlights && (
                 <div className="mb-3 p-3 bg-slate-900/50 rounded border border-slate-700">

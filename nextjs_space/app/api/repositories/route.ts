@@ -29,10 +29,29 @@ export async function GET(request: Request) {
       ],
     });
 
-    // Convert BigInt to string for JSON serialization
+    const parseJsonArray = (val: string | string[] | null | undefined) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      try {
+        return JSON.parse(val || '[]');
+      } catch {
+        return [];
+      }
+    };
+
+    // Convert BigInt to string for JSON serialization and parse topics and analysis
     const serializedRepos = repositories?.map((repo: any) => ({
       ...repo,
       githubId: repo?.githubId?.toString() ?? '0',
+      topics: parseJsonArray(repo.topics),
+      aiAnalysis: repo.aiAnalysis ? {
+        ...repo.aiAnalysis,
+        techStack: parseJsonArray(repo.aiAnalysis.techStack),
+        keyFeatures: parseJsonArray(repo.aiAnalysis.keyFeatures),
+        strengths: parseJsonArray(repo.aiAnalysis.strengths),
+        architecturePatterns: parseJsonArray(repo.aiAnalysis.architecturePatterns),
+        skillsDemonstrated: parseJsonArray(repo.aiAnalysis.skillsDemonstrated),
+      } : null,
     })) ?? [];
 
     return NextResponse.json({ repositories: serializedRepos });
@@ -80,17 +99,34 @@ export async function PATCH(request: Request) {
       );
     }
 
+    // Prepare updates
+    const preparedUpdates = { ...updates };
+    if (preparedUpdates.topics && Array.isArray(preparedUpdates.topics)) {
+      preparedUpdates.topics = JSON.stringify(preparedUpdates.topics);
+    }
+
     // Update repository
     const updated = await prisma.repository.update({
       where: { id: repositoryId },
-      data: updates ?? {},
+      data: preparedUpdates ?? {},
     });
+
+    const parseJsonArray = (val: string | string[] | null | undefined) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      try {
+        return JSON.parse(val || '[]');
+      } catch {
+        return [];
+      }
+    };
 
     return NextResponse.json({
       success: true,
       repository: {
         ...updated,
         githubId: updated?.githubId?.toString() ?? '0',
+        topics: parseJsonArray(updated.topics),
       },
     });
   } catch (error: any) {

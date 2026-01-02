@@ -27,6 +27,7 @@ import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import RepositoryList from './repository-list';
 import { PortfolioCuration } from './portfolio-curation';
+import EngineeringDNA from '@/components/engineering-dna';
 
 interface GitHubConnection {
   connected: boolean;
@@ -165,7 +166,7 @@ export default function DashboardClient() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-6 py-12">
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">Dashboard</h1>
+          <h1 className="text-4xl font-bold text-white mb-2">Repository Explorer</h1>
           <p className="text-slate-400">Manage your GitHub portfolio and AI insights</p>
         </div>
 
@@ -314,6 +315,10 @@ export default function DashboardClient() {
                   <FolderOpen className="w-4 h-4 mr-2" />
                   Curate Portfolio
                 </TabsTrigger>
+                <TabsTrigger value="dna" className="data-[state=active]:bg-slate-700">
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Engineering DNA
+                </TabsTrigger>
               </TabsList>
               
               <TabsContent value="repositories" className="mt-6">
@@ -322,6 +327,18 @@ export default function DashboardClient() {
               
               <TabsContent value="curate" className="mt-6">
                 <PortfolioCuration />
+              </TabsContent>
+
+              <TabsContent value="dna" className="mt-6">
+                <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-6">
+                  {connection?.githubUsername ? (
+                    <EngineeringDNA username={connection.githubUsername} />
+                  ) : (
+                    <div className="text-center py-12 text-slate-400">
+                      Please connect your GitHub account to view your Engineering DNA.
+                    </div>
+                  )}
+                </Card>
               </TabsContent>
             </Tabs>
           </div>

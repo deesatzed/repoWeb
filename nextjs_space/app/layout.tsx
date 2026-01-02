@@ -11,15 +11,15 @@ export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXTAUTH_URL || 'http://localhost:3000'),
-  title: 'DevShowcase - AI-Powered GitHub Portfolio',
-  description: 'Showcase your GitHub repositories with AI-powered insights to impress employers',
+  title: 'RepoNexus - AI-Powered Engineering Portfolio',
+  description: 'Showcase your engineering DNA with AI-powered insights',
   icons: {
     icon: '/favicon.svg',
     shortcut: '/favicon.svg',
   },
   openGraph: {
-    title: 'DevShowcase - AI-Powered GitHub Portfolio',
-    description: 'Showcase your GitHub repositories with AI-powered insights to impress employers',
+    title: 'RepoNexus - AI-Powered Engineering Portfolio',
+    description: 'Showcase your engineering DNA with AI-powered insights',
     images: ['/og-image.png'],
   },
 };

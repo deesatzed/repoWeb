@@ -1,10 +1,10 @@
 generator client {
     provider = "prisma-client-js"
-    binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+    binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
-    provider = "postgresql"
+    provider = "sqlite"
     url      = env("DATABASE_URL")
 }
 
@@ -14,12 +14,12 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
   user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -62,7 +62,7 @@ model GitHubConnection {
   id              String   @id @default(cuid())
   userId          String   @unique
   githubUsername  String
-  githubToken     String   @db.Text // Encrypted
+  githubToken     String // Encrypted
   lastSyncedAt    DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -76,7 +76,7 @@ model Repository {
   githubId            BigInt   @unique
   name                String
   fullName            String
-  description         String?  @db.Text
+  description         String?
   htmlUrl             String
   homepage            String?
   isPrivate           Boolean
@@ -88,11 +88,11 @@ model Repository {
   watchersCount       Int      @default(0)
   size                Int      @default(0)
   defaultBranch       String?
-  topics              String[]  @default([])
+  topics              String    @default("[]")
   createdAt           DateTime
   updatedAt           DateTime
   pushedAt            DateTime?
-  readmeContent       String?  @db.Text
+  readmeContent       String?
   languages           Json?    // Language breakdown
   isExcluded          Boolean  @default(false)
   isFeatured          Boolean  @default(false)
@@ -117,13 +117,13 @@ model AIAnalysis {
   complexityScore       Float?   // 0-100
   codeQualityScore      Float?   // 0-100
   projectType           String?  // e.g., "Full-Stack Web App", "CLI Tool", "Library"
-  techStack             String[] @default([])
-  keyFeatures           String[] @default([])
-  strengths             String[] @default([])
-  architecturePatterns  String[] @default([])
-  summary               String?  @db.Text
-  employerHighlights    String?  @db.Text // Most impressive aspects for employers
-  skillsDemonstrated    String[] @default([])
+  techStack             String @default("[]")
+  keyFeatures           String @default("[]")
+  strengths             String @default("[]")
+  architecturePatterns  String @default("[]")
+  summary               String?
+  employerHighlights    String? // Most impressive aspects for employers
+  skillsDemonstrated    String @default("[]")
   linesOfCode           Int?
   fileCount             Int?
   hasTests              Boolean  @default(false)
@@ -139,7 +139,7 @@ model PortfolioSettings {
   id                    String   @id @default(cuid())
   userId                String   @unique
   displayName           String?
-  bio                   String?  @db.Text
+  bio                   String?
   location              String?
   website               String?
   twitter               String?
@@ -150,7 +150,7 @@ model PortfolioSettings {
   showActivityGraph     Boolean  @default(true)
   showLanguageStats     Boolean  @default(true)
   showSkillsBreakdown   Boolean  @default(true)
-  featuredSection       String?  @db.Text // JSON config for featured section
+  featuredSection       String? // JSON config for featured section
   customSections        Json?    // Custom sections configuration
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -163,7 +163,7 @@ model Project {
   user                 User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   name                 String
-  description          String?       @db.Text
+  description          String?
   displayOrder         Int           @default(0)
   isVisible            Boolean       @default(true)
   
@@ -183,14 +183,14 @@ model ProjectAnalysis {
   project              Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   
   // Skills-focused analysis
-  technicalSkills      String[]      @default([])
-  designDecisions      String?       @db.Text
-  novelApproaches      String?       @db.Text
-  testingStrategy      String?       @db.Text
-  problemsSolved       String?       @db.Text
-  skillDemonstration   String?       @db.Text
-  architectureInsights String?       @db.Text
-  techStack            String[]      @default([])
+  technicalSkills      String      @default("[]")
+  designDecisions      String?
+  novelApproaches      String?
+  testingStrategy      String?
+  problemsSolved       String?
+  skillDemonstration   String?
+  architectureInsights String?
+  techStack            String      @default("[]")
   
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
@@ -201,7 +201,7 @@ model CodeAsset {
   fingerprint     String                @unique // SHA256 of the normalized code content
   name            String                // Function or Class name
   type            String                // "function", "class", "component"
-  content         String                @db.Text
+  content         String
   language        String                // "typescript", "python", etc.
   complexity      Int                   @default(0)
   frequency       Int                   @default(1)

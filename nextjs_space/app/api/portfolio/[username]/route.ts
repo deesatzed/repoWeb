@@ -51,9 +51,14 @@ export async function GET(
     }
 
     // Get portfolio settings
-    const settings = await prisma.portfolioSettings.findUnique({
+    const rawSettings = await prisma.portfolioSettings.findUnique({
       where: { userId: connection.userId },
     });
+
+    const settings = rawSettings ? {
+      ...rawSettings,
+      featuredSection: rawSettings.featuredSection ? JSON.parse(rawSettings.featuredSection) : null,
+    } : null;
 
     // Get projects with their analyses
     const projects = await prisma.project.findMany({
@@ -82,6 +87,16 @@ export async function GET(
       (repo: any) => !repo.projectId
     );
 
+    const parseJsonArray = (val: string | string[] | null | undefined) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      try {
+        return JSON.parse(val || '[]');
+      } catch {
+        return [];
+      }
+    };
+
     return NextResponse.json({
       user: connection.user,
       githubUsername: connection.githubUsername,
@@ -90,6 +105,11 @@ export async function GET(
         repositories: p.repositories.map((r: any) =>
           toPublicRepository(r, settings)
         ),
+        aiAnalysis: p.aiAnalysis ? {
+          ...p.aiAnalysis,
+          technicalSkills: parseJsonArray(p.aiAnalysis.technicalSkills),
+          techStack: parseJsonArray(p.aiAnalysis.techStack),
+        } : null,
       })),
       repositories: ungroupedRepos,
       ungroupedRepositories: ungroupedRepos,

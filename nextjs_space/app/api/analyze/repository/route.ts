@@ -51,12 +51,21 @@ export async function POST(request: Request) {
       repository.isPrivate && settings?.hidePrivateRepoNames
     );
 
+    const parseJsonArray = (val: string | string[]) => {
+      if (Array.isArray(val)) return val;
+      try {
+        return JSON.parse(val || '[]');
+      } catch {
+        return [];
+      }
+    };
+
     // Prepare context for AI analysis
     const context = {
       name: repository.name,
       description: repository.description ?? 'No description',
       language: repository.language ?? 'Unknown',
-      topics: repository.topics ?? [],
+      topics: parseJsonArray(repository.topics),
       stars: repository.stargazersCount ?? 0,
       forks: repository.forksCount ?? 0,
       size: repository.size ?? 0,
@@ -68,8 +77,8 @@ export async function POST(request: Request) {
       isFork: repository.isFork,
     };
 
-    const prompt = `You are analyzing a software project to assess the BUILDER's capabilities, NOT to advertise the application itself. Focus on what this project demonstrates about the developer's technical skills, decision-making, and engineering maturity.
-
+    const prompt = `You are analyzing a software project to assess the BUILDER's capabilities.
+    
 Repository Information:
 - Name: ${context.name}
 - Description: ${context.description}
@@ -80,36 +89,28 @@ Repository Information:
 - Size: ${context.size} KB
 - Languages: ${JSON.stringify(context.languages)}
 - Is Fork: ${context.isFork}
-- README Preview: ${context.readme.substring(0, 1000)}
+- README Preview: ${context.readme.substring(0, 1500)}
 
-Analyze what this project reveals about the DEVELOPER's skills:
+Analyze this project to create a comprehensive technical profile.
 
 1. TECHNICAL SKILLS: What specific technologies, frameworks, and tools did the builder demonstrate competency in?
-2. DESIGN DECISIONS: What architectural or design patterns are evident? Why might they have chosen these approaches?
-3. PROBLEM SOLVING: What technical challenges did this project likely require solving? What does the solution approach reveal?
-4. ENGINEERING MATURITY: Evidence of testing, documentation, code quality practices, deployment considerations?
-5. NOVEL/ADVANCED TECHNIQUES: Any sophisticated or innovative approaches that go beyond basic implementation?
-
-CRITICAL RULES:
-- NO marketing fluff about the app's features
-- NO dollar amounts or business metrics
-- NO generic timelines
-- FOCUS on what the code and architecture demonstrate about the builder's capabilities
-- Be specific and technical
-- Emphasize skills that transfer to other projects
+2. KEY FEATURES: List the specific functional features implemented. Be descriptive.
+3. DESIGN DECISIONS: What architectural or design patterns are evident?
+4. PROBLEM SOLVING: What technical challenges did this project likely require solving?
+5. ENGINEERING MATURITY: Evidence of testing, documentation, code quality practices?
 
 Respond with raw JSON only in this exact structure:
 {
-  "complexityScore": <number 0-100 based on technical sophistication>,
-  "codeQualityScore": <number 0-100 based on engineering practices>,
+  "complexityScore": <number 0-100>,
+  "codeQualityScore": <number 0-100>,
   "projectType": "<type of application>",
   "techStack": ["specific technologies used"],
-  "keyFeatures": ["technical capabilities implemented, not user features"],
-  "strengths": ["specific technical strengths demonstrated by the builder"],
-  "architecturePatterns": ["design patterns, architectural decisions visible"],
-  "summary": "<2-3 sentences about what this project demonstrates about the builder's technical capabilities>",
-  "employerHighlights": "<What specific skills or technical decisions make this builder hireable? Focus on transferable engineering competencies, not app features>",
-  "skillsDemonstrated": ["specific technical skills: e.g. 'API design', 'state management', 'database optimization', 'authentication implementation']",
+  "keyFeatures": ["detailed feature description 1", "detailed feature description 2", "detailed feature description 3"],
+  "strengths": ["specific technical strengths"],
+  "architecturePatterns": ["design patterns"],
+  "summary": "<2-3 sentences summary>",
+  "employerHighlights": "<Why hire this builder based on this repo?>",
+  "skillsDemonstrated": ["skill 1", "skill 2"],
   "linesOfCode": <estimated>,
   "fileCount": <estimated>,
   "hasTests": <boolean>,
@@ -118,7 +119,7 @@ Respond with raw JSON only in this exact structure:
   "contributionPattern": "<Solo Project|Team Collaboration|Open Source>"
 }
 
-Respond with raw JSON only. Do not include code blocks, markdown, or any other formatting.`;
+Respond with raw JSON only.`;
 
     // Create a stream for SSE
     const stream = new ReadableStream({
@@ -151,13 +152,13 @@ Respond with raw JSON only. Do not include code blocks, markdown, or any other f
               complexityScore: finalAnalysis.complexityScore,
               codeQualityScore: finalAnalysis.codeQualityScore,
               projectType: finalAnalysis.projectType,
-              techStack: finalAnalysis.techStack,
-              keyFeatures: finalAnalysis.keyFeatures,
-              strengths: finalAnalysis.strengths,
-              architecturePatterns: finalAnalysis.architecturePatterns,
+              techStack: JSON.stringify(finalAnalysis.techStack),
+              keyFeatures: JSON.stringify(finalAnalysis.keyFeatures),
+              strengths: JSON.stringify(finalAnalysis.strengths),
+              architecturePatterns: JSON.stringify(finalAnalysis.architecturePatterns),
               summary: finalAnalysis.summary,
               employerHighlights: finalAnalysis.employerHighlights,
-              skillsDemonstrated: finalAnalysis.skillsDemonstrated,
+              skillsDemonstrated: JSON.stringify(finalAnalysis.skillsDemonstrated),
               linesOfCode: finalAnalysis.linesOfCode ?? null,
               fileCount: finalAnalysis.fileCount ?? null,
               hasTests: finalAnalysis.hasTests,
@@ -171,13 +172,13 @@ Respond with raw JSON only. Do not include code blocks, markdown, or any other f
               complexityScore: finalAnalysis.complexityScore,
               codeQualityScore: finalAnalysis.codeQualityScore,
               projectType: finalAnalysis.projectType,
-              techStack: finalAnalysis.techStack,
-              keyFeatures: finalAnalysis.keyFeatures,
-              strengths: finalAnalysis.strengths,
-              architecturePatterns: finalAnalysis.architecturePatterns,
+              techStack: JSON.stringify(finalAnalysis.techStack),
+              keyFeatures: JSON.stringify(finalAnalysis.keyFeatures),
+              strengths: JSON.stringify(finalAnalysis.strengths),
+              architecturePatterns: JSON.stringify(finalAnalysis.architecturePatterns),
               summary: finalAnalysis.summary,
               employerHighlights: finalAnalysis.employerHighlights,
-              skillsDemonstrated: finalAnalysis.skillsDemonstrated,
+              skillsDemonstrated: JSON.stringify(finalAnalysis.skillsDemonstrated),
               linesOfCode: finalAnalysis.linesOfCode ?? null,
               fileCount: finalAnalysis.fileCount ?? null,
               hasTests: finalAnalysis.hasTests,

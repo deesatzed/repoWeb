@@ -17,7 +17,6 @@ export async function GET(
         githubConnection: {
           githubUsername: {
             equals: username,
-            mode: 'insensitive',
           },
         },
       },
@@ -84,6 +83,8 @@ export async function GET(
       },
       take: 100, // Limit to top 100 diamonds
     });
+
+    console.log(`[DNA_API] Found ${assets.length} assets`);
 
     // 3. Transform for public consumption (Privacy: NO raw content)
     const publicAssets = assets.map((asset: typeof assets[0]) => ({

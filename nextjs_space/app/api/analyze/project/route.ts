@@ -58,6 +58,16 @@ export async function POST(request: Request) {
       where: { userId: session.user.id },
     });
 
+    const parseJsonArray = (val: string | string[] | null | undefined) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      try {
+        return JSON.parse(val || '[]');
+      } catch {
+        return [];
+      }
+    };
+
     // Prepare context for AI analysis
     const repoContexts = [...project.repositories]
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
@@ -65,7 +75,7 @@ export async function POST(request: Request) {
       name: repo.name,
       description: repo.description ?? 'No description',
       language: repo.language ?? 'Unknown',
-      topics: repo.topics ?? [],
+      topics: parseJsonArray(repo.topics),
       stars: repo.stargazersCount ?? 0,
       size: repo.size ?? 0,
       readme:
@@ -74,9 +84,9 @@ export async function POST(request: Request) {
           : redactForLLM(repo.readmeContent ?? '', { maxLength: 1500 }),
       languages: repo.languages ?? {},
       analysis: repo.aiAnalysis ? {
-        techStack: repo.aiAnalysis.techStack,
-        architecturePatterns: repo.aiAnalysis.architecturePatterns,
-        skillsDemonstrated: repo.aiAnalysis.skillsDemonstrated,
+        techStack: parseJsonArray(repo.aiAnalysis.techStack),
+        architecturePatterns: parseJsonArray(repo.aiAnalysis.architecturePatterns),
+        skillsDemonstrated: parseJsonArray(repo.aiAnalysis.skillsDemonstrated),
       } : null,
     }));
 
@@ -166,129 +176,73 @@ Respond with raw JSON only in this exact structure:
 
 Respond with raw JSON only. Do not include code blocks, markdown, or any other formatting.`;
 
-    const messages = [
-      { role: 'user', content: prompt },
-    ];
-
-    const response = await fetch('https://apps.abacus.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.ABACUSAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4.1-mini',
-        messages: messages,
-        stream: true,
-        max_tokens: 3000,
-        response_format: { type: 'json_object' },
-      }),
-    });
-
-    if (!response?.ok) {
-      throw new Error('LLM API request failed');
-    }
-
+    // Create a stream for SSE
     const stream = new ReadableStream({
       async start(controller) {
-        const reader = response?.body?.getReader();
-        const decoder = new TextDecoder();
         const encoder = new TextEncoder();
-        let buffer = '';
-        let partialRead = '';
 
         try {
-          while (true) {
-            const { done, value } = (await reader?.read()) ?? {};
-            if (done) break;
-            
-            partialRead += decoder.decode(value ?? new Uint8Array(), { stream: true });
-            let lines = partialRead.split('\n');
-            partialRead = lines.pop() ?? '';
-            
-            for (const line of lines ?? []) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6);
-                if (data === '[DONE]') {
-                  // Parse and save the analysis
-                  let analysis: unknown;
-                  try {
-                    analysis = JSON.parse(buffer);
-                  } catch {
-                    analysis = null;
-                  }
+          // 1. Send "processing" status
+          const progressData = JSON.stringify({
+            status: 'processing',
+            message: 'Analyzing project evolution...',
+          });
+          controller.enqueue(encoder.encode(`data: ${progressData}\n\n`));
 
-                  let validated = ProjectAnalysisSchema.safeParse(analysis);
-                  if (!validated.success) {
-                    // Safe retry using non-stream completion
-                    const retry = await fetchValidatedAnalysis();
-                    validated = ProjectAnalysisSchema.safeParse(retry);
-                  }
+          // 2. Call OpenRouter via lib/llm
+          // We use a specific system prompt for the project analyzer
+          const systemPrompt = "You are a CTO-level engineering manager assessing a candidate's portfolio project for technical growth and architectural maturity.";
+          
+          // Import dynamically to avoid circular dependencies if any, or just standard import
+          const { analyzeJSON } = await import('@/lib/llm');
+          
+          const rawAnalysis = await analyzeJSON(prompt, systemPrompt);
 
-                  if (!validated.success) {
-                    const errorData = JSON.stringify({
-                      status: 'error',
-                      message: 'Analysis validation failed',
-                    });
-                    controller.enqueue(encoder.encode(`data: ${errorData}\n\n`));
-                    controller.close();
-                    return;
-                  }
-
-                  const finalAnalysis = validated.data;
-                  
-                  // Save to database
-                  await prisma.projectAnalysis.upsert({
-                    where: { projectId: project.id },
-                    update: {
-                      technicalSkills: finalAnalysis.technicalSkills,
-                      designDecisions: finalAnalysis.designDecisions,
-                      novelApproaches: finalAnalysis.novelApproaches,
-                      testingStrategy: finalAnalysis.testingStrategy,
-                      problemsSolved: finalAnalysis.problemsSolved,
-                      skillDemonstration: finalAnalysis.skillDemonstration,
-                      architectureInsights: finalAnalysis.architectureInsights,
-                      techStack: finalAnalysis.techStack,
-                      updatedAt: new Date(),
-                    },
-                    create: {
-                      projectId: project.id,
-                      technicalSkills: finalAnalysis.technicalSkills,
-                      designDecisions: finalAnalysis.designDecisions,
-                      novelApproaches: finalAnalysis.novelApproaches,
-                      testingStrategy: finalAnalysis.testingStrategy,
-                      problemsSolved: finalAnalysis.problemsSolved,
-                      skillDemonstration: finalAnalysis.skillDemonstration,
-                      architectureInsights: finalAnalysis.architectureInsights,
-                      techStack: finalAnalysis.techStack,
-                    },
-                  });
-
-                  const finalData = JSON.stringify({
-                    status: 'completed',
-                    result: finalAnalysis,
-                  });
-                  controller.enqueue(encoder.encode(`data: ${finalData}\n\n`));
-                  controller.close();
-                  return;
-                }
-                
-                try {
-                  const parsed = JSON.parse(data);
-                  buffer += parsed?.choices?.[0]?.delta?.content || '';
-                  const progressData = JSON.stringify({
-                    status: 'processing',
-                    message: 'Analyzing project...',
-                  });
-                  controller.enqueue(encoder.encode(`data: ${progressData}\n\n`));
-                } catch (e) {
-                  // Skip invalid JSON
-                }
-              }
-            }
+          // 3. Validate
+          const validated = ProjectAnalysisSchema.safeParse(rawAnalysis);
+          if (!validated.success) {
+            throw new Error('Analysis validation failed: ' + validated.error.message);
           }
+
+          const finalAnalysis = validated.data;
+
+          // 4. Save to database
+          await prisma.projectAnalysis.upsert({
+            where: { projectId: project.id },
+            update: {
+              technicalSkills: JSON.stringify(finalAnalysis.technicalSkills),
+              designDecisions: finalAnalysis.designDecisions,
+              novelApproaches: finalAnalysis.novelApproaches,
+              testingStrategy: finalAnalysis.testingStrategy,
+              problemsSolved: finalAnalysis.problemsSolved,
+              skillDemonstration: finalAnalysis.skillDemonstration,
+              architectureInsights: finalAnalysis.architectureInsights,
+              techStack: JSON.stringify(finalAnalysis.techStack),
+              updatedAt: new Date(),
+            },
+            create: {
+              projectId: project.id,
+              technicalSkills: JSON.stringify(finalAnalysis.technicalSkills),
+              designDecisions: finalAnalysis.designDecisions,
+              novelApproaches: finalAnalysis.novelApproaches,
+              testingStrategy: finalAnalysis.testingStrategy,
+              problemsSolved: finalAnalysis.problemsSolved,
+              skillDemonstration: finalAnalysis.skillDemonstration,
+              architectureInsights: finalAnalysis.architectureInsights,
+              techStack: JSON.stringify(finalAnalysis.techStack),
+            },
+          });
+
+          // 5. Send "completed" status
+          const finalData = JSON.stringify({
+            status: 'completed',
+            result: finalAnalysis,
+          });
+          controller.enqueue(encoder.encode(`data: ${finalData}\n\n`));
+          controller.close();
+
         } catch (error: any) {
-          console.error('Stream error:', error);
+          console.error('Analysis error:', error);
           const errorData = JSON.stringify({
             status: 'error',
             message: error?.message || 'Analysis failed',
