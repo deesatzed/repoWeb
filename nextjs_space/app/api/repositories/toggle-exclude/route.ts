@@ -25,12 +25,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'GitHub not connected' }, { status: 400 });
     }
 
-    // Update repository
-    const repository = await prisma.repository.update({
-      where: { 
+    // Verify ownership first
+    const existingRepo = await prisma.repository.findFirst({
+      where: {
         id: repositoryId,
         githubConnectionId: user.githubConnection.id,
       },
+    });
+
+    if (!existingRepo) {
+      return NextResponse.json({ error: 'Repository not found or unauthorized' }, { status: 404 });
+    }
+
+    // Update repository
+    const repository = await prisma.repository.update({
+      where: { id: repositoryId },
       data: { isExcluded: isExcluded ?? false },
     });
 

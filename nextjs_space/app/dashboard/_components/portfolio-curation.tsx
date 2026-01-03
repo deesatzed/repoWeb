@@ -46,10 +46,38 @@ export function PortfolioCuration() {
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDescription, setNewProjectDescription] = useState('');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isAutoCurating, setIsAutoCurating] = useState(false);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleAutoCurate = async () => {
+    if (!confirm('This will use AI to automatically organize your portfolio by grouping related repos and hiding junk ones. Existing projects will be preserved. Continue?')) {
+      return;
+    }
+
+    try {
+      setIsAutoCurating(true);
+      const toastId = toast.loading('AI is organizing your portfolio...');
+
+      const res = await fetch('/api/curate/auto', {
+        method: 'POST',
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || 'Failed to auto-curate');
+
+      toast.success(`Done! Created ${data.results.projectsCreated} groups and hid ${data.results.excluded} junk repos.`, { id: toastId });
+      loadData();
+    } catch (error) {
+      console.error('Auto-curate error:', error);
+      toast.error('Failed to auto-curate portfolio');
+    } finally {
+      setIsAutoCurating(false);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -95,7 +123,7 @@ export function PortfolioCuration() {
         )
       );
 
-      toast.success(!currentExcluded ? 'Repository excluded' : 'Repository included');
+      toast.success(!currentExcluded ? 'Repository hidden' : 'Repository visible');
     } catch (error) {
       console.error('Error toggling repository:', error);
       toast.error('Failed to update repository');
@@ -220,85 +248,96 @@ export function PortfolioCuration() {
             Select which repositories to showcase and group related projects
           </p>
         </div>
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Create Project Group
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create Project Group</DialogTitle>
-              <DialogDescription>
-                Group related repositories into a single project (e.g., different versions of the same app)
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div>
-                <Label htmlFor="project-name">Project Name</Label>
-                <Input
-                  id="project-name"
-                  placeholder="E-commerce Platform"
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="project-description">Description (Optional)</Label>
-                <Textarea
-                  id="project-description"
-                  placeholder="A full-stack e-commerce solution with React and Node.js..."
-                  value={newProjectDescription}
-                  onChange={(e) => setNewProjectDescription(e.target.value)}
-                  rows={3}
-                />
-              </div>
-              <div>
-                <Label>Select Repositories to Group</Label>
-                <div className="mt-2 space-y-2 max-h-60 overflow-y-auto border rounded-md p-3">
-                  {ungroupedRepos.map(repo => (
-                    <div key={repo.id} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`select-${repo.id}`}
-                        checked={selectedRepos.has(repo.id)}
-                        onCheckedChange={(checked) => {
-                          const newSet = new Set(selectedRepos);
-                          if (checked) {
-                            newSet.add(repo.id);
-                          } else {
-                            newSet.delete(repo.id);
-                          }
-                          setSelectedRepos(newSet);
-                        }}
-                      />
-                      <label
-                        htmlFor={`select-${repo.id}`}
-                        className="text-sm cursor-pointer flex-1"
-                      >
-                        {repo.name}
-                        {repo.language && (
-                          <Badge variant="outline" className="ml-2">
-                            {repo.language}
-                          </Badge>
-                        )}
-                      </label>
-                    </div>
-                  ))}
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            onClick={handleAutoCurate}
+            disabled={isAutoCurating || loading}
+            className="border-purple-500/50 text-purple-300 hover:bg-purple-500/10"
+          >
+            <Sparkles className={`h-4 w-4 mr-2 ${isAutoCurating ? 'animate-spin' : ''}`} />
+            {isAutoCurating ? 'Organizing...' : 'Magic Auto-Curate'}
+          </Button>
+
+          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Create Project Group
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create Project Group</DialogTitle>
+                <DialogDescription>
+                  Group related repositories into a single project (e.g., frontend + backend)
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div>
+                  <Label htmlFor="project-name">Project Name</Label>
+                  <Input
+                    id="project-name"
+                    placeholder="E-commerce Platform"
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="project-description">Description (Optional)</Label>
+                  <Textarea
+                    id="project-description"
+                    placeholder="A full-stack e-commerce solution..."
+                    value={newProjectDescription}
+                    onChange={(e) => setNewProjectDescription(e.target.value)}
+                    rows={3}
+                  />
+                </div>
+                <div>
+                  <Label>Select Repositories to Group</Label>
+                  <div className="mt-2 space-y-2 max-h-60 overflow-y-auto border rounded-md p-3">
+                    {ungroupedRepos.map(repo => (
+                      <div key={repo.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`select-${repo.id}`}
+                          checked={selectedRepos.has(repo.id)}
+                          onCheckedChange={(checked) => {
+                            const newSet = new Set(selectedRepos);
+                            if (checked) {
+                              newSet.add(repo.id);
+                            } else {
+                              newSet.delete(repo.id);
+                            }
+                            setSelectedRepos(newSet);
+                          }}
+                        />
+                        <label
+                          htmlFor={`select-${repo.id}`}
+                          className="text-sm cursor-pointer flex-1"
+                        >
+                          {repo.name}
+                          {repo.language && (
+                            <Badge variant="outline" className="ml-2">
+                              {repo.language}
+                            </Badge>
+                          )}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button onClick={createProject}>Create Project</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={createProject}>Create Project</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
-      {/* Projects */}
       {projects.length > 0 && (
         <div className="space-y-4">
           <h3 className="text-lg font-semibold flex items-center gap-2">
@@ -360,7 +399,6 @@ export function PortfolioCuration() {
         </div>
       )}
 
-      {/* Ungrouped Repositories */}
       {ungroupedRepos.length > 0 && (
         <div className="space-y-4">
           <h3 className="text-lg font-semibold">Individual Repositories ({ungroupedRepos.length})</h3>
@@ -398,7 +436,6 @@ export function PortfolioCuration() {
         </div>
       )}
 
-      {/* Excluded Repositories */}
       {excludedRepos.length > 0 && (
         <div className="space-y-4">
           <h3 className="text-lg font-semibold text-muted-foreground">

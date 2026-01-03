@@ -8,10 +8,9 @@ import {
   Sparkles, 
   Star, 
   GitFork, 
-  Eye,
-  ExternalLink,
   Clock,
-  Code2
+  Code2,
+  ExternalLink
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -41,6 +40,7 @@ export default function RepositoryList() {
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState<string | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number } | null>(null);
 
   useEffect(() => {
     fetchRepositories();
@@ -58,9 +58,7 @@ export default function RepositoryList() {
     }
   };
 
-  const handleAnalyze = async (repoId: string) => {
-    setAnalyzing(repoId);
-
+  const runAnalysis = async (repoId: string): Promise<boolean> => {
     try {
       const response = await fetch('/api/analyze/repository', {
         method: 'POST',
@@ -68,17 +66,14 @@ export default function RepositoryList() {
         body: JSON.stringify({ repositoryId: repoId }),
       });
 
-      if (!response?.body) {
-        throw new Error('No response body');
-      }
+      if (!response?.body) throw new Error('No response body');
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = '';
       let partialRead = '';
 
       while (true) {
-        const { done, value } = (await reader?.read()) ?? {};
+        const { done, value } = await reader.read();
         if (done) break;
 
         partialRead += decoder.decode(value ?? new Uint8Array(), { stream: true });
@@ -88,32 +83,56 @@ export default function RepositoryList() {
         for (const line of lines ?? []) {
           if (line.startsWith('data: ')) {
             const data = line.slice(6);
-            if (data === '[DONE]') {
-              continue;
-            }
+            if (data === '[DONE]') continue;
             
             try {
               const parsed = JSON.parse(data);
-              if (parsed?.status === 'completed') {
-                toast.success('Analysis completed!');
-                fetchRepositories();
-                setAnalyzing(null);
-                return;
-              } else if (parsed?.status === 'error') {
-                throw new Error(parsed?.message || 'Analysis failed');
-              }
-            } catch (e: any) {
-              // Skip invalid JSON
-            }
+              if (parsed?.status === 'completed') return true;
+              if (parsed?.status === 'error') throw new Error(parsed?.message);
+            } catch (e) { /* ignore */ }
           }
         }
       }
-    } catch (error: any) {
-      toast.error('Failed to analyze repository');
-      console.error('Analysis error:', error);
-    } finally {
-      setAnalyzing(null);
+      return true;
+    } catch (error) {
+      console.error(`Analysis failed for ${repoId}:`, error);
+      return false;
     }
+  };
+
+  const handleAnalyze = async (repoId: string) => {
+    setAnalyzing(repoId);
+    const success = await runAnalysis(repoId);
+    if (success) {
+      toast.success('Analysis completed!');
+      fetchRepositories();
+    } else {
+      toast.error('Failed to analyze repository');
+    }
+    setAnalyzing(null);
+  };
+
+  const handleBulkAnalyze = async () => {
+    const unanalyzed = repositories.filter(r => !r.aiAnalysis);
+    if (unanalyzed.length === 0) {
+      toast.info('All repositories are already analyzed!');
+      return;
+    }
+
+    if (!confirm(`This will analyze ${unanalyzed.length} repositories. It may take a few minutes. Continue?`)) return;
+
+    setBulkProgress({ current: 0, total: unanalyzed.length });
+    
+    let completed = 0;
+    for (const repo of unanalyzed) {
+      await runAnalysis(repo.id);
+      completed++;
+      setBulkProgress({ current: completed, total: unanalyzed.length });
+    }
+
+    toast.success('Bulk analysis completed!');
+    setBulkProgress(null);
+    fetchRepositories();
   };
 
   const toggleFeatured = async (repoId: string, currentValue: boolean) => {
@@ -156,7 +175,22 @@ export default function RepositoryList() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-2xl font-bold text-white">Your Repositories ({repositories?.length ?? 0})</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-white">Your Repositories ({repositories?.length ?? 0})</h2>
+        {repositories.some(r => !r.aiAnalysis) && (
+          <Button 
+            onClick={handleBulkAnalyze}
+            disabled={!!bulkProgress || loading}
+            variant="outline"
+            className="border-purple-500/50 text-purple-300 hover:bg-purple-500/10"
+          >
+            <Sparkles className={`w-4 h-4 mr-2 ${!!bulkProgress ? 'animate-spin' : ''}`} />
+            {bulkProgress 
+              ? `Analyzing ${bulkProgress.current}/${bulkProgress.total}...` 
+              : `Bulk Analyze All (${repositories.filter(r => !r.aiAnalysis).length})`}
+          </Button>
+        )}
+      </div>
       
       <div className="grid gap-4">
         {repositories?.map((repo) => (

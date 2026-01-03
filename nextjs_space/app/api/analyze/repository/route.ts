@@ -77,49 +77,50 @@ export async function POST(request: Request) {
       isFork: repository.isFork,
     };
 
-    const prompt = `You are analyzing a software project to assess the BUILDER's capabilities.
+    const prompt = `You are a cynical, high-bar CTO reviewing a candidate's code repository to determine if they are worth interviewing. 
     
-Repository Information:
-- Name: ${context.name}
-- Description: ${context.description}
-- Primary Language: ${context.language}
-- Topics/Tags: ${context.topics.join(', ')}
-- Stars: ${context.stars}
-- Forks: ${context.forks}
-- Size: ${context.size} KB
-- Languages: ${JSON.stringify(context.languages)}
-- Is Fork: ${context.isFork}
-- README Preview: ${context.readme.substring(0, 1500)}
-
-Analyze this project to create a comprehensive technical profile.
-
-1. TECHNICAL SKILLS: What specific technologies, frameworks, and tools did the builder demonstrate competency in?
-2. KEY FEATURES: List the specific functional features implemented. Be descriptive.
-3. DESIGN DECISIONS: What architectural or design patterns are evident?
-4. PROBLEM SOLVING: What technical challenges did this project likely require solving?
-5. ENGINEERING MATURITY: Evidence of testing, documentation, code quality practices?
-
-Respond with raw JSON only in this exact structure:
-{
-  "complexityScore": <number 0-100>,
-  "codeQualityScore": <number 0-100>,
-  "projectType": "<type of application>",
-  "techStack": ["specific technologies used"],
-  "keyFeatures": ["detailed feature description 1", "detailed feature description 2", "detailed feature description 3"],
-  "strengths": ["specific technical strengths"],
-  "architecturePatterns": ["design patterns"],
-  "summary": "<2-3 sentences summary>",
-  "employerHighlights": "<Why hire this builder based on this repo?>",
-  "skillsDemonstrated": ["skill 1", "skill 2"],
-  "linesOfCode": <estimated>,
-  "fileCount": <estimated>,
-  "hasTests": <boolean>,
-  "hasDocumentation": <boolean>,
-  "hasCiCd": <boolean>,
-  "contributionPattern": "<Solo Project|Team Collaboration|Open Source>"
-}
-
-Respond with raw JSON only.`;
+    Repository Context:
+    - Name: ${context.name}
+    - Description: ${context.description}
+    - Language: ${context.language}
+    - Topics: ${context.topics.join(', ')}
+    - Stars/Forks: ${context.stars} / ${context.forks}
+    - README Preview: ${context.readme.substring(0, 1500)}
+    
+    TASK: Analyze this project for "Proof of Work" and "Engineering Competency". 
+    
+    CRITICAL INSTRUCTIONS:
+    1. IGNORE generic boilerplate (e.g., "used React"). FOCUS on *how* it was used (e.g., "Implemented custom virtualization for large datasets in React").
+    2. DETECT "Tutorial/Clone" code. If this looks like a generic "ToDo App" or "Twitter Clone" with no unique features, mark it as low complexity.
+    3. SEARCH for "Evidence of Competency": Error handling, testing, CI/CD, documentation, architectural patterns (MVC, DDD, etc.).
+    4. NO FLUFF. Do not use words like "amazing", "stunning", "robust" unless backed by specific code evidence.
+    
+    Analyze specifically for:
+    - TECHNICAL SKILLS: What *hard* problems were solved? (e.g. concurrency, memory management, complex state).
+    - BUSINESS VALUE: What actual feature does this provide?
+    - ENGINEERING MATURITY: Is this "hackathon code" or "production code"?
+    
+    Respond with raw JSON only in this exact structure:
+    {
+      "complexityScore": <number 0-100, be strict, tutorial=10, production=90>,
+      "codeQualityScore": <number 0-100>,
+      "projectType": "<e.g. 'Tutorial implementation', 'Production Library', 'Hackathon Prototype'>",
+      "techStack": ["specific libs/frameworks"],
+      "keyFeatures": ["feature 1 (technical detail)", "feature 2"],
+      "strengths": ["strength 1", "strength 2"],
+      "architecturePatterns": ["pattern 1", "pattern 2"],
+      "summary": "<2 sentence objective summary for a hiring manager>",
+      "employerHighlights": "<One specific reason to hire this person based on THIS repo. If none, say 'Limited signal'>",
+      "skillsDemonstrated": ["skill 1", "skill 2"],
+      "linesOfCode": <estimated>,
+      "fileCount": <estimated>,
+      "hasTests": <boolean>,
+      "hasDocumentation": <boolean>,
+      "hasCiCd": <boolean>,
+      "contributionPattern": "<Solo|Team|Fork>"
+    }
+    
+    Respond with raw JSON only.`;
 
     // Create a stream for SSE
     const stream = new ReadableStream({
@@ -152,13 +153,13 @@ Respond with raw JSON only.`;
               complexityScore: finalAnalysis.complexityScore,
               codeQualityScore: finalAnalysis.codeQualityScore,
               projectType: finalAnalysis.projectType,
-              techStack: JSON.stringify(finalAnalysis.techStack),
-              keyFeatures: JSON.stringify(finalAnalysis.keyFeatures),
-              strengths: JSON.stringify(finalAnalysis.strengths),
-              architecturePatterns: JSON.stringify(finalAnalysis.architecturePatterns),
+              techStack: JSON.stringify(finalAnalysis.techStack ?? []) as any,
+              keyFeatures: JSON.stringify(finalAnalysis.keyFeatures ?? []) as any,
+              strengths: JSON.stringify(finalAnalysis.strengths ?? []) as any,
+              architecturePatterns: JSON.stringify(finalAnalysis.architecturePatterns ?? []) as any,
               summary: finalAnalysis.summary,
               employerHighlights: finalAnalysis.employerHighlights,
-              skillsDemonstrated: JSON.stringify(finalAnalysis.skillsDemonstrated),
+              skillsDemonstrated: JSON.stringify(finalAnalysis.skillsDemonstrated ?? []) as any,
               linesOfCode: finalAnalysis.linesOfCode ?? null,
               fileCount: finalAnalysis.fileCount ?? null,
               hasTests: finalAnalysis.hasTests,
@@ -172,13 +173,13 @@ Respond with raw JSON only.`;
               complexityScore: finalAnalysis.complexityScore,
               codeQualityScore: finalAnalysis.codeQualityScore,
               projectType: finalAnalysis.projectType,
-              techStack: JSON.stringify(finalAnalysis.techStack),
-              keyFeatures: JSON.stringify(finalAnalysis.keyFeatures),
-              strengths: JSON.stringify(finalAnalysis.strengths),
-              architecturePatterns: JSON.stringify(finalAnalysis.architecturePatterns),
+              techStack: JSON.stringify(finalAnalysis.techStack ?? []) as any,
+              keyFeatures: JSON.stringify(finalAnalysis.keyFeatures ?? []) as any,
+              strengths: JSON.stringify(finalAnalysis.strengths ?? []) as any,
+              architecturePatterns: JSON.stringify(finalAnalysis.architecturePatterns ?? []) as any,
               summary: finalAnalysis.summary,
               employerHighlights: finalAnalysis.employerHighlights,
-              skillsDemonstrated: JSON.stringify(finalAnalysis.skillsDemonstrated),
+              skillsDemonstrated: JSON.stringify(finalAnalysis.skillsDemonstrated ?? []) as any,
               linesOfCode: finalAnalysis.linesOfCode ?? null,
               fileCount: finalAnalysis.fileCount ?? null,
               hasTests: finalAnalysis.hasTests,

@@ -126,55 +126,44 @@ export async function POST(request: Request) {
       return validated.data;
     }
 
-    const prompt = `You are analyzing a PROJECT composed of multiple related repositories (iterations/versions of the same system). Focus on what this evolution demonstrates about the DEVELOPER's growth, learning, and technical decision-making across iterations.
-
-Project Name: ${project.name}
-Project Description: ${project.description || 'No description'}
-
-Repositories in this project (chronological order):
-${repoContexts.map((repo, i) => `
-Repository ${i + 1}:
-- Name: ${repo.name}
-- Description: ${repo.description}
-- Primary Language: ${repo.language}
-- Topics: ${repo.topics.join(', ')}
-- Size: ${repo.size} KB
-- Languages: ${JSON.stringify(repo.languages)}
-- README Preview: ${repo.readme.substring(0, 500)}
-${repo.analysis ? `- Previous Analysis:
-  - Tech Stack: ${repo.analysis.techStack.join(', ')}
-  - Architecture: ${repo.analysis.architecturePatterns.join(', ')}
-  - Skills: ${repo.analysis.skillsDemonstrated.join(', ')}` : ''}`).join('\n')}
-
-Analyze what this PROJECT (as a whole) reveals about the DEVELOPER:
-
-1. TECHNICAL EVOLUTION: How did the technology choices and implementations evolve across iterations?
-2. DESIGN MATURITY: What design decisions show growth in architectural thinking?
-3. PROBLEM-SOLVING PROGRESSION: What challenges were tackled? How did approaches improve?
-4. TESTING & QUALITY: How did testing and quality practices evolve?
-5. LEARNING DEMONSTRATED: What new technologies or patterns were adopted? Why?
-6. ARCHITECTURAL INSIGHTS: What does the final architecture say about the developer's systems thinking?
-
-CRITICAL RULES:
-- FOCUS on the developer's technical growth and decision-making across iterations
-- NO marketing language about app features
-- NO timelines or dollar amounts
-- Emphasize LEARNING and IMPROVEMENT visible across versions
-- Highlight TRANSFERABLE SKILLS and engineering maturity
-
-Respond with raw JSON only in this exact structure:
-{
-  "technicalSkills": ["comprehensive list of technical skills demonstrated across all repos"],
-  "designDecisions": "<detailed analysis of key architectural and design decisions made, and what they reveal about the developer's thinking>",
-  "novelApproaches": "<specific innovative or advanced techniques used that go beyond standard implementation>",
-  "testingStrategy": "<analysis of testing approach, quality practices, and how they evolved>",
-  "problemsSolved": "<key technical challenges solved across the project and the sophistication of solutions>",
-  "skillDemonstration": "<what this project proves about the developer's capabilities - be specific and technical>",
-  "architectureInsights": "<analysis of system architecture, scalability considerations, and design patterns>",
-  "techStack": ["consolidated tech stack across all repositories"]
-}
-
-Respond with raw JSON only. Do not include code blocks, markdown, or any other formatting.`;
+    const prompt = `You are a Senior Engineering Manager assessing a candidate's portfolio project. This 'Project' is a collection of repositories representing different services, iterations, or components of a larger system.
+    
+    Project Name: ${project.name}
+    Project Description: ${project.description || 'No description'}
+    
+    Repositories involved (Chronological):
+    ${repoContexts.map((repo, i) => `
+    [Repo ${i + 1}]: ${repo.name}
+    - Description: ${repo.description}
+    - Stack: ${repo.language} / ${repo.topics.join(', ')}
+    - Analysis: ${repo.analysis ? JSON.stringify(repo.analysis.techStack) : 'N/A'}
+    `).join('\n')}
+    
+    YOUR GOAL: Construct the "Developer's Narrative" for a prospective employer.
+    
+    QUESTIONS TO ANSWER:
+    1. SYSTEM THINKING: How do these pieces fit together? Is this a microservices architecture? A frontend/backend split? Or just a collection of random scripts?
+    2. GROWTH TRAJECTORY: If these are iterations, how did the code improve? Did they move from vanilla JS to TypeScript? From monolith to serverless?
+    3. SPECIALIZATION: What distinct "Engineering Persona" emerges? (e.g., "Strong Backend Systems Engineer", "Product-Focused UI UX Developer", "Data Pipeline Specialist").
+    
+    CRITICAL RULES:
+    - NO FLUFF. Do not say "showcased strong skills". Say "demonstrated proficiency in distributed systems by implementing Raft consensus".
+    - BE SPECIFIC. Cite specific technologies and patterns used in the repos.
+    - FOCUS ON EMPLOYABILITY. What role would you hire this person for based *only* on this project?
+    
+    Respond with raw JSON only in this exact structure:
+    {
+      "technicalSkills": ["list of HARD skills proven by this project"],
+      "designDecisions": "<Analysis of architectural choices (e.g. 'Chose SQL over NoSQL because...')>",
+      "novelApproaches": "<Any non-standard, creative solutions found?>",
+      "testingStrategy": "<Assessment of quality assurance across the project>",
+      "problemsSolved": "<The core business or technical problems addressed>",
+      "skillDemonstration": "<The 'Engineering Persona' proven by this project (e.g. 'Full Stack Architect')>",
+      "architectureInsights": "<How the system scales, handles data, or communicates>",
+      "techStack": ["Combined stack"]
+    }
+    
+    Respond with raw JSON only.`;
 
     // Create a stream for SSE
     const stream = new ReadableStream({
@@ -210,26 +199,26 @@ Respond with raw JSON only. Do not include code blocks, markdown, or any other f
           await prisma.projectAnalysis.upsert({
             where: { projectId: project.id },
             update: {
-              technicalSkills: JSON.stringify(finalAnalysis.technicalSkills),
+              technicalSkills: JSON.stringify(finalAnalysis.technicalSkills ?? []) as any,
               designDecisions: finalAnalysis.designDecisions,
               novelApproaches: finalAnalysis.novelApproaches,
               testingStrategy: finalAnalysis.testingStrategy,
               problemsSolved: finalAnalysis.problemsSolved,
               skillDemonstration: finalAnalysis.skillDemonstration,
               architectureInsights: finalAnalysis.architectureInsights,
-              techStack: JSON.stringify(finalAnalysis.techStack),
+              techStack: JSON.stringify(finalAnalysis.techStack ?? []) as any,
               updatedAt: new Date(),
             },
             create: {
               projectId: project.id,
-              technicalSkills: JSON.stringify(finalAnalysis.technicalSkills),
+              technicalSkills: JSON.stringify(finalAnalysis.technicalSkills ?? []) as any,
               designDecisions: finalAnalysis.designDecisions,
               novelApproaches: finalAnalysis.novelApproaches,
               testingStrategy: finalAnalysis.testingStrategy,
               problemsSolved: finalAnalysis.problemsSolved,
               skillDemonstration: finalAnalysis.skillDemonstration,
               architectureInsights: finalAnalysis.architectureInsights,
-              techStack: JSON.stringify(finalAnalysis.techStack),
+              techStack: JSON.stringify(finalAnalysis.techStack ?? []) as any,
             },
           });
 
