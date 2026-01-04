@@ -150,7 +150,8 @@ export default function DashboardClient() {
       setActiveTab('curate');
     } else if (action === 'analyze') {
       setActiveTab('repositories');
-      setTriggerAnalyze(true);
+      // Do NOT auto-trigger analysis; user must start manually after curation
+      setTriggerAnalyze(false);
     }
   };
 
