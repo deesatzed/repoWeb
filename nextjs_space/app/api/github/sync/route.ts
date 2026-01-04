@@ -49,7 +49,8 @@ export async function POST(request: Request) {
       let languages = null;
       let readme = null;
 
-      if (!existing || existing.updatedAt < repoUpdatedAt) {
+      const shouldFetchHeavy = !existing || existing.updatedAt < repoUpdatedAt;
+      if (shouldFetchHeavy) {
         console.log(`Fetching heavy data for ${repo.name}...`);
         [languages, readme] = await Promise.all([
           githubService.getRepositoryLanguages(owner ?? '', repoName ?? ''),
@@ -62,50 +63,42 @@ export async function POST(request: Request) {
         skippedCount++;
       }
 
+      const baseData = {
+        githubConnectionId: connection.id,
+        name: repo?.name ?? '',
+        fullName: repo?.full_name ?? '',
+        description: repo?.description,
+        htmlUrl: repo?.html_url ?? '',
+        homepage: repo?.homepage,
+        isPrivate: repo?.private ?? false,
+        isFork: repo?.fork ?? false,
+        language: repo?.language,
+        stargazersCount: repo?.stargazers_count ?? 0,
+        forksCount: repo?.forks_count ?? 0,
+        openIssuesCount: repo?.open_issues_count ?? 0,
+        watchersCount: repo?.watchers_count ?? 0,
+        size: repo?.size ?? 0,
+        defaultBranch: repo?.default_branch ?? 'main',
+        topics: JSON.stringify(repo?.topics ?? []) as any,
+        updatedAt: repoUpdatedAt,
+        pushedAt: repo?.pushed_at ? new Date(repo.pushed_at) : null,
+      };
+
+      const heavyData = {
+        ...(readme !== null && { readmeContent: readme }),
+        ...(languages !== null && { languages: languages as any }),
+      };
+
       await prisma.repository.upsert({
         where: { githubId: BigInt(repo?.id ?? 0) },
         update: {
-          name: repo?.name ?? '',
-          fullName: repo?.full_name ?? '',
-          description: repo?.description,
-          htmlUrl: repo?.html_url ?? '',
-          homepage: repo?.homepage,
-          isPrivate: repo?.private ?? false,
-          isFork: repo?.fork ?? false,
-          language: repo?.language,
-          stargazersCount: repo?.stargazers_count ?? 0,
-          forksCount: repo?.forks_count ?? 0,
-          openIssuesCount: repo?.open_issues_count ?? 0,
-          watchersCount: repo?.watchers_count ?? 0,
-          size: repo?.size ?? 0,
-          defaultBranch: repo?.default_branch ?? 'main',
-          topics: JSON.stringify(repo?.topics ?? []) as any,
-          updatedAt: repoUpdatedAt,
-          pushedAt: repo?.pushed_at ? new Date(repo.pushed_at) : null,
-          ...(readme !== null && { readmeContent: readme }),
-          ...(languages !== null && { languages: languages as any }),
+          ...baseData,
+          ...heavyData,
         },
         create: {
-          githubConnectionId: connection.id,
+          ...baseData,
           githubId: BigInt(repo?.id ?? 0),
-          name: repo?.name ?? '',
-          fullName: repo?.full_name ?? '',
-          description: repo?.description,
-          htmlUrl: repo?.html_url ?? '',
-          homepage: repo?.homepage,
-          isPrivate: repo?.private ?? false,
-          isFork: repo?.fork ?? false,
-          language: repo?.language,
-          stargazersCount: repo?.stargazers_count ?? 0,
-          forksCount: repo?.forks_count ?? 0,
-          openIssuesCount: repo?.open_issues_count ?? 0,
-          watchersCount: repo?.watchers_count ?? 0,
-          size: repo?.size ?? 0,
-          defaultBranch: repo?.default_branch ?? 'main',
-          topics: JSON.stringify(repo?.topics ?? []) as any,
           createdAt: new Date(repo?.created_at ?? new Date()),
-          updatedAt: repoUpdatedAt,
-          pushedAt: repo?.pushed_at ? new Date(repo.pushed_at) : null,
           readmeContent: readme ?? '',
           languages: (languages ?? {}) as any,
         },
