@@ -87,37 +87,37 @@ export async function POST(request: Request) {
     - Stars/Forks: ${context.stars} / ${context.forks}
     - README Preview: ${context.readme.substring(0, 1500)}
     
-    TASK: Analyze this project for "Proof of Work" and "Engineering Competency". 
+    TASK: Deep technical analysis for a "Senior Engineer" or "Lead" role. 
     
     CRITICAL INSTRUCTIONS:
-    1. IGNORE generic boilerplate (e.g., "used React"). FOCUS on *how* it was used (e.g., "Implemented custom virtualization for large datasets in React").
-    2. DETECT "Tutorial/Clone" code. If this looks like a generic "ToDo App" or "Twitter Clone" with no unique features, mark it as low complexity.
-    3. SEARCH for "Evidence of Competency": Error handling, testing, CI/CD, documentation, architectural patterns (MVC, DDD, etc.).
-    4. NO FLUFF. Do not use words like "amazing", "stunning", "robust" unless backed by specific code evidence.
+    1. EVIDENCE-BASED ONLY: Do not say "excellent code quality" unless you cite specific patterns (e.g., "Dependency injection used for service layers", "Comprehensive unit testing with Jest").
+    2. EMPLOYER FOCUS: What ROI does this person bring? Do they solve hard problems (scalability, security, performance) or just build CRUD apps?
+    3. DETECT JUNK/TUTORIALS: If this is a tutorial-style repo, be blunt. If it's a fork with zero changes, flag it.
+    4. PERSONA: You are looking for system thinking, architectural awareness, and production readiness.
     
     Analyze specifically for:
-    - TECHNICAL SKILLS: What *hard* problems were solved? (e.g. concurrency, memory management, complex state).
-    - BUSINESS VALUE: What actual feature does this provide?
-    - ENGINEERING MATURITY: Is this "hackathon code" or "production code"?
+    - ARCHITECTURAL DEPTH: MVC, Microservices, Event-driven, DDD, etc.
+    - OPERATIONAL EXCELLENCE: CI/CD, Monitoring, Error handling, Logging.
+    - DOMAIN EXPERTISE: Does this show deep knowledge of ${context.language} or specific industries (e.g. Fintech, Healthcare)?
     
     Respond with raw JSON only in this exact structure:
     {
       "complexityScore": <number 0-100, be strict, tutorial=10, production=90>,
       "codeQualityScore": <number 0-100>,
-      "projectType": "<e.g. 'Tutorial implementation', 'Production Library', 'Hackathon Prototype'>",
+      "projectType": "<e.g. 'Production-Grade System', 'Technical Proof of Concept', 'Open Source Library'>",
       "techStack": ["specific libs/frameworks"],
       "keyFeatures": ["feature 1 (technical detail)", "feature 2"],
-      "strengths": ["strength 1", "strength 2"],
+      "strengths": ["architectural strength 1", "operational strength 2"],
       "architecturePatterns": ["pattern 1", "pattern 2"],
-      "summary": "<2 sentence objective summary for a hiring manager>",
-      "employerHighlights": "<One specific reason to hire this person based on THIS repo. If none, say 'Limited signal'>",
+      "summary": "<2 sentence technical value proposition for a hiring manager>",
+      "employerHighlights": "<A 'Killer Feature' or specific reason this code proves senior-level skill.>",
       "skillsDemonstrated": ["skill 1", "skill 2"],
       "linesOfCode": <estimated>,
       "fileCount": <estimated>,
       "hasTests": <boolean>,
       "hasDocumentation": <boolean>,
       "hasCiCd": <boolean>,
-      "contributionPattern": "<Solo|Team|Fork>"
+      "contributionPattern": "<Solo|Team|Forked-with-Changes>"
     }
     
     Respond with raw JSON only.`;

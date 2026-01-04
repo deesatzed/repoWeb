@@ -69,17 +69,20 @@ export async function POST(request: Request) {
     
     You have a list of ${repoList.length} GitHub repositories. Your goal is to ORGANIZE them into a clean, employer-ready portfolio.
     
+    CRITICAL: BE HIGHLY SELECTIVE. If a repository seems like a tutorial, medical boilerplate, "Hello World", or irrelevant exercise, EXCLUDE it.
+    The user complained that the previous grouping was too broad (e.g., non-medical repos grouped under medical). 
+    
     TASKS:
     1. IDENTIFY JUNK: Find repositories that should be HIDDEN (excluded).
        - Criteria: "Hello World" exercises, tutorial clones (e.g. "react-todo-tutorial"), empty repos, old/abandoned forks with no stars, or random config files.
-       - Keep: Real projects, libraries, useful tools, even if old (if they show skill).
+       - BE STRICT. If you are unsure, exclude it.
     
     2. CLUSTER PROJECTS: Group related repositories into "Projects".
-       - Example: "frontend-repo" + "backend-repo" -> Project "Full Stack E-commerce App".
-       - Example: "v1-app" + "v2-app" -> Project "App Evolution".
-       - Example: "algo-lib" + "utils" -> Project "Core Libraries".
+       - DO NOT group unrelated repositories just because they use the same language.
+       - Group ONLY if they are logically part of the same system (e.g. frontend + backend of the same app).
+       - Project names should be specific and professional.
     
-    3. LEAVE STANDALONE: High-quality repos that don't fit a group should stay visible but NOT in a project (do not include them in 'projects' array, and do not exclude them).
+    3. LEAVE STANDALONE: High-quality repos that don't fit a group should stay visible but NOT in a project.
     
     INPUT DATA:
     ${JSON.stringify(repoList, null, 2)}
@@ -89,8 +92,8 @@ export async function POST(request: Request) {
       "excludedRepoIds": ["id_of_junk_1", "id_of_junk_2"],
       "projects": [
         {
-          "name": "Exciting Project Name",
-          "description": "A brief 1-sentence description of what this group represents",
+          "name": "Specific Project Name",
+          "description": "Brief professional summary of this group",
           "repositoryIds": ["id_1", "id_2"]
         }
       ],
@@ -151,7 +154,7 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error('Auto-curate error:', error);
     return NextResponse.json(
-      { error: 'Failed to auto-curate portfolio' },
+      { error: 'Failed to auto-curate portfolio', details: error?.message || String(error) },
       { status: 500 }
     );
   }

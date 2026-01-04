@@ -11,6 +11,7 @@ import {
   Award,
   Copy,
   Check,
+  Stars
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -29,6 +30,15 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
   const projects = data?.projects ?? [];
   const repositories = data?.repositories ?? [];
   const githubUsername = data?.githubUsername ?? '';
+  const allRepos = useMemo(() => {
+    const projectRepos = projects.flatMap((p: any) => p?.repositories ?? []);
+    const combined = [...repositories, ...projectRepos];
+    const byId = new Map<string, any>();
+    combined.forEach((r: any) => {
+      if (r?.id) byId.set(r.id, r);
+    });
+    return Array.from(byId.values());
+  }, [projects, repositories]);
 
   // Calculate aggregate skills across all projects and repositories
   const aggregateSkills = useMemo(() => {
@@ -75,6 +85,36 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
       techStack: Array.from(techStackSet).slice(0, 15),
     };
   }, [projects, repositories]);
+
+  const targetRoles = useMemo(() => {
+    const stack = new Set(aggregateSkills.techStack.map((t: string) => t.toLowerCase()));
+    const skills = new Set(aggregateSkills.skills.map((s: string) => s.toLowerCase()));
+    const roles: string[] = [];
+
+    const add = (label: string) => {
+      if (!roles.includes(label)) roles.push(label);
+    };
+
+    if (stack.has('react') || stack.has('nextjs') || stack.has('typescript') || skills.has('frontend')) add('Frontend / UI');
+    if (stack.has('node') || stack.has('express') || stack.has('python') || stack.has('django') || stack.has('golang') || skills.has('backend')) add('Backend / APIs');
+    if (stack.has('docker') || stack.has('kubernetes') || skills.has('devops')) add('Platform / DevOps');
+    if (stack.has('postgres') || stack.has('mysql') || stack.has('mongodb')) add('Data & Storage');
+    if (stack.has('pytorch') || stack.has('tensorflow') || skills.has('ml') || skills.has('ai')) add('AI / ML');
+    if (stack.has('aws') || stack.has('gcp') || stack.has('azure')) add('Cloud');
+
+    if (roles.length === 0) roles.push('Full-Stack Engineering');
+    return roles.slice(0, 4);
+  }, [aggregateSkills]);
+
+  const highlightRepos = useMemo(() => {
+    const withAnalysis = allRepos.filter((r: any) => r?.aiAnalysis?.employerHighlights);
+    const sorted = withAnalysis.sort((a: any, b: any) => {
+      const aScore = (a.isFeatured ? 1 : 0) * 1000 + (a.stargazersCount ?? 0);
+      const bScore = (b.isFeatured ? 1 : 0) * 1000 + (b.stargazersCount ?? 0);
+      return bScore - aScore;
+    });
+    return sorted.slice(0, 3);
+  }, [allRepos]);
 
   const handleCopyUrl = () => {
     const url = window.location.href;
@@ -143,9 +183,23 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
             <h1 className="text-6xl font-bold mb-4 text-white">
               {githubUsername}
             </h1>
-            <p className="text-xl text-slate-300 max-w-2xl mx-auto mb-8">
+            <p className="text-xl text-slate-300 max-w-2xl mx-auto mb-6">
               Technical skills and engineering capabilities demonstrated through real projects
             </p>
+
+            {targetRoles?.length > 0 && (
+              <div className="flex flex-wrap justify-center gap-3 mb-8">
+                {targetRoles.map((role) => (
+                  <span
+                    key={role}
+                    className="px-3 py-1.5 rounded-full bg-slate-800/70 border border-slate-700 text-slate-200 text-sm flex items-center gap-2"
+                  >
+                    <Stars className="w-4 h-4 text-amber-400" />
+                    {role}
+                  </span>
+                ))}
+              </div>
+            )}
             
               {/* Quick Stats - Centered Grid based on available items */}
               <div className={`grid gap-6 max-w-4xl mx-auto ${
@@ -245,6 +299,68 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
           )}
         </div>
       </section>
+
+      {/* Employer Highlights Strip */}
+      {highlightRepos.length > 0 && (
+        <section className="px-6">
+          <div className="max-w-7xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+              className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 mb-10"
+            >
+              <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <Stars className="w-5 h-5 text-amber-400" />
+                  <h3 className="text-lg font-semibold text-white">Employer Highlights</h3>
+                </div>
+                <p className="text-sm text-slate-400">Top evidence-backed repos to open first</p>
+              </div>
+              <div className="grid md:grid-cols-3 gap-4">
+                {highlightRepos.map((repo: any, idx: number) => (
+                  <motion.div
+                    key={repo?.id ?? idx}
+                    initial={{ opacity: 0, y: 10 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.35, delay: 0.05 * idx }}
+                    className="p-4 rounded-xl bg-slate-800/60 border border-slate-700 h-full flex flex-col gap-3"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500 mb-1">Repo</p>
+                        <p className="text-base font-semibold text-white line-clamp-1">{repo?.name}</p>
+                      </div>
+                      <div className="flex items-center gap-1 text-amber-300 text-sm">
+                        <Stars className="w-4 h-4" />
+                        <span>{repo?.stargazersCount ?? 0}</span>
+                      </div>
+                    </div>
+                    {repo?.aiAnalysis?.employerHighlights && (
+                      <p className="text-sm text-slate-300 line-clamp-3 leading-relaxed">
+                        {repo.aiAnalysis.employerHighlights}
+                      </p>
+                    )}
+                    {repo?.aiAnalysis?.skillsDemonstrated?.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {repo.aiAnalysis.skillsDemonstrated.slice(0, 3).map((skill: string, skillIdx: number) => (
+                          <span
+                            key={skillIdx}
+                            className="px-2 py-1 rounded-md bg-purple-500/10 border border-purple-500/20 text-xs text-purple-200"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+        </section>
+      )}
 
       {/* Engineering DNA Section */}
       <EngineeringDNA username={githubUsername} />

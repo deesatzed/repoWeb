@@ -90,42 +90,6 @@ export async function POST(request: Request) {
       } : null,
     }));
 
-    async function fetchValidatedAnalysis(): Promise<unknown> {
-      const messages = [{ role: 'user', content: prompt }];
-
-      const response = await fetch('https://apps.abacus.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.ABACUSAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4.1-mini',
-          messages,
-          stream: false,
-          max_tokens: 3000,
-          response_format: { type: 'json_object' },
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('LLM API request failed');
-      }
-
-      const json = await response.json();
-      const content = json?.choices?.[0]?.message?.content;
-      if (typeof content !== 'string' || !content.trim()) {
-        throw new Error('LLM returned empty response');
-      }
-
-      const parsed = JSON.parse(content);
-      const validated = ProjectAnalysisSchema.safeParse(parsed);
-      if (!validated.success) {
-        throw new Error('LLM response validation failed');
-      }
-      return validated.data;
-    }
-
     const prompt = `You are a Senior Engineering Manager assessing a candidate's portfolio project. This 'Project' is a collection of repositories representing different services, iterations, or components of a larger system.
     
     Project Name: ${project.name}
