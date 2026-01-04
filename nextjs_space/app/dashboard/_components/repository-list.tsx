@@ -190,8 +190,23 @@ export default function RepositoryList({
   };
 
   const handleBulkAnalyze = async (skipConfirm = false) => {
+    // Refresh repositories to respect the latest hide/show changes before analyzing
+    let currentRepos = repositories;
+    try {
+      const res = await fetch(`/api/repositories?t=${Date.now()}`);
+      const data = await res.json();
+      let refreshed = data?.repositories ?? [];
+      if (previewOnly) {
+        refreshed = refreshed.filter((r: Repository) => !r.isExcluded);
+      }
+      setRepositories(refreshed);
+      currentRepos = refreshed;
+    } catch (err) {
+      console.error('Refresh before bulk analyze failed:', err);
+    }
+
     // Only analyze repositories that are NOT excluded and NOT already analyzed
-    const toAnalyze = repositories.filter(r => !r.isExcluded && !r.aiAnalysis);
+    const toAnalyze = currentRepos.filter(r => !r.isExcluded && !r.aiAnalysis);
     
     if (toAnalyze.length === 0) {
       const unanalyzedCount = repositories.filter(r => !r.aiAnalysis).length;
@@ -213,6 +228,10 @@ export default function RepositoryList({
     
     let completed = 0;
     for (const repo of toAnalyze) {
+      // Skip if repository became excluded between refresh and execution
+      if (repo.isExcluded) {
+        continue;
+      }
       try {
         console.log(`Starting bulk analysis for: ${repo.name}`);
         await runAnalysis(repo.id);
