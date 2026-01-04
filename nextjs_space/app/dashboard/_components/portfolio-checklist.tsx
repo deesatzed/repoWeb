@@ -99,7 +99,7 @@ export function PortfolioChecklist({
       id: 'analyze',
       title: '5. Deep AI Analysis',
       description: 'Generate high-signal content for prospective employers.',
-      status: stats.isAnalyzed ? 'completed' : (stats.analyzedCount > 0 ? 'in_progress' : 'pending'),
+      status: stats.isAnalyzed ? 'completed' : (isAnalyzing ? 'in_progress' : 'pending'),
       icon: Sparkles,
       stats: `${stats.analyzedCount} analyzed`,
       actionLabel: stats.isAnalyzed ? 'Update Analysis' : 'Start Deep Analysis',
