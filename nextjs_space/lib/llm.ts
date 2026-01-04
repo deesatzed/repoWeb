@@ -2,8 +2,8 @@
 import OpenAI from 'openai';
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-// User-selected model from the approved list (DeepSeek V3 is reliable and cheap)
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'deepseek/deepseek-chat';
+// User-selected model; default to a higher-quality option
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'z-ai/glm-4.7';
 
 let openai: OpenAI | null = null;
 
