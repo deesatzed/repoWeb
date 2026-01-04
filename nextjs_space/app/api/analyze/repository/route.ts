@@ -117,7 +117,7 @@ export async function POST(request: Request) {
       "hasTests": <boolean>,
       "hasDocumentation": <boolean>,
       "hasCiCd": <boolean>,
-      "contributionPattern": "<Solo|Team|Forked-with-Changes>"
+      "contributionPattern": "<Solo Project|Team Collaboration|Open Source>"
     }
     
     Respond with raw JSON only.`;
@@ -138,8 +138,21 @@ export async function POST(request: Request) {
           // 2. Call OpenRouter
           const rawAnalysis = await analyzeJSON(prompt, 'You are a senior technical recruiter and engineering manager.');
 
+          // Normalize contributionPattern to schema enum
+          const normalizeContributionPattern = (val: any): 'Solo Project' | 'Team Collaboration' | 'Open Source' => {
+            if (!val) return 'Solo Project';
+            const v = String(val).toLowerCase();
+            if (v.includes('team')) return 'Team Collaboration';
+            if (v.includes('open')) return 'Open Source';
+            return 'Solo Project';
+          };
+          const normalizedAnalysis = {
+            ...((rawAnalysis as Record<string, unknown>) ?? {}),
+            contributionPattern: normalizeContributionPattern((rawAnalysis as any)?.contributionPattern),
+          };
+
           // 3. Validate
-          const validated = RepositoryAnalysisSchema.safeParse(rawAnalysis);
+          const validated = RepositoryAnalysisSchema.safeParse(normalizedAnalysis);
           if (!validated.success) {
             throw new Error('Analysis validation failed: ' + validated.error.message);
           }
