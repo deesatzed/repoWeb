@@ -287,6 +287,46 @@ export function PortfolioCuration() {
     }
   };
 
+  const removeRepoFromProject = async (projectId: string, repositoryId: string) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/repositories?repositoryId=${repositoryId}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to remove repository from project');
+      }
+
+      toast.success('Repository removed from project');
+      loadData();
+    } catch (error) {
+      console.error('Error removing repository from project:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to remove repository from project');
+    }
+  };
+
+  const addRepoToProject = async (repositoryId: string, projectId: string) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/repositories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repositoryId }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to add repository to project');
+      }
+
+      toast.success('Repository added to project');
+      loadData();
+    } catch (error) {
+      console.error('Error adding repository to project:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to add repository to project');
+    }
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const [filterLanguage, setFilterLanguage] = useState<string | null>(null);
 
@@ -633,6 +673,13 @@ export function PortfolioCuration() {
                         <div key={repo.id} className="flex items-center gap-2 bg-slate-900/50 px-3 py-1.5 rounded-md border border-slate-700/50">
                           <span className="text-sm text-slate-200 font-medium">{repo.name}</span>
                           {repo.language && <span className="text-xs text-slate-500">• {repo.language}</span>}
+                          <button
+                            onClick={() => removeRepoFromProject(project.id, repo.id)}
+                            className="ml-1 text-slate-500 hover:text-red-400 transition-colors"
+                            title="Remove from project"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -677,14 +724,33 @@ export function PortfolioCuration() {
                         )}
                       </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => toggleRepoExclusion(repo.id, false)}
-                      className="text-slate-500 hover:text-slate-300"
-                    >
-                      <EyeOff className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      {projects.length > 0 && (
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              addRepoToProject(repo.id, e.target.value);
+                              e.target.value = '';
+                            }
+                          }}
+                          className="bg-slate-900 border border-slate-700 text-white text-sm rounded-md px-2 py-1.5 outline-none hover:border-slate-600 transition-colors"
+                        >
+                          <option value="">Add to group...</option>
+                          {projects.map(project => (
+                            <option key={project.id} value={project.id}>{project.name}</option>
+                          ))}
+                        </select>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toggleRepoExclusion(repo.id, false)}
+                        className="text-slate-500 hover:text-slate-300"
+                      >
+                        <EyeOff className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </Card>
               ))}
