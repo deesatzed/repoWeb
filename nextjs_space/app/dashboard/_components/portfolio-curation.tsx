@@ -50,6 +50,9 @@ export function PortfolioCuration() {
   const [isAutoCurating, setIsAutoCurating] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
+  const [resetConfirm, setResetConfirm] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -79,6 +82,39 @@ export function PortfolioCuration() {
       toast.error('Failed to auto-curate portfolio');
     } finally {
       setIsAutoCurating(false);
+    }
+  };
+
+  const handleNuclearReset = async () => {
+    if (resetConfirm !== 'NUKE') {
+      toast.error('Type NUKE to confirm');
+      return;
+    }
+
+    try {
+      setIsResetting(true);
+      const toastId = toast.loading('Resetting your portfolio...');
+
+      const res = await fetch('/api/portfolio/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: resetConfirm }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to reset');
+      }
+
+      toast.success('Portfolio reset complete. You can now reconnect and sync fresh.', { id: toastId });
+      setIsResetDialogOpen(false);
+      setResetConfirm('');
+      loadData();
+    } catch (error) {
+      console.error('Reset error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to reset portfolio');
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -398,6 +434,56 @@ export function PortfolioCuration() {
             <Sparkles className={`h-4 w-4 mr-2 ${isAutoCurating ? 'animate-spin' : ''}`} />
             {isAutoCurating ? 'Organizing...' : 'Magic Auto-Curate'}
           </Button>
+
+          <Dialog open={isResetDialogOpen} onOpenChange={(open) => {
+            setIsResetDialogOpen(open);
+            if (!open) setResetConfirm('');
+          }}>
+            <DialogTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={isResetting}
+                className="border-red-500/50 text-red-300 hover:bg-red-500/10"
+              >
+                <Trash2 className={`h-4 w-4 mr-2 ${isResetting ? 'animate-spin' : ''}`} />
+                Reset (NUKE)
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="bg-slate-900 border-slate-800 text-white">
+              <DialogHeader>
+                <DialogTitle className="text-red-300">Nuclear Reset</DialogTitle>
+                <DialogDescription className="text-slate-400">
+                  This deletes your repos, groups, analyses, and settings for this account. You will need to reconnect GitHub and sync again.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3 py-2">
+                <Label className="text-slate-300">Type NUKE to confirm</Label>
+                <Input
+                  value={resetConfirm}
+                  onChange={(e) => setResetConfirm(e.target.value)}
+                  placeholder="NUKE"
+                  className="bg-slate-800 border-slate-700 text-white"
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsResetDialogOpen(false)}
+                  className="border-slate-700 text-slate-300"
+                  disabled={isResetting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleNuclearReset}
+                  className="bg-red-600 hover:bg-red-700"
+                  disabled={isResetting || resetConfirm !== 'NUKE'}
+                >
+                  {isResetting ? 'Resetting...' : 'Reset Everything'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           <Dialog open={isCreateDialogOpen} onOpenChange={(open) => {
             setIsCreateDialogOpen(open);
