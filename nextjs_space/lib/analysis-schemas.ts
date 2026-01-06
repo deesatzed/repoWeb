@@ -17,6 +17,12 @@ export const RepositoryAnalysisSchema = z.object({
   hasDocumentation: z.boolean(),
   hasCiCd: z.boolean(),
   contributionPattern: z.enum(['Solo Project', 'Team Collaboration', 'Open Source']),
+  citations: z.array(z.object({
+    claim: z.string(),
+    filePath: z.string(),
+    lineNumber: z.number().int().nonnegative(),
+    codeSnippet: z.string().max(500),
+  })).default([]),
 });
 
 export type RepositoryAnalysis = z.infer<typeof RepositoryAnalysisSchema>;

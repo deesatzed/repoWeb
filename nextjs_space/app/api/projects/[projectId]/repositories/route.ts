@@ -3,6 +3,14 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import prisma from '@/lib/db';
 
+const serializeRepository = (repo: any) => {
+  if (!repo) return repo;
+  return {
+    ...repo,
+    githubId: repo.githubId ? repo.githubId.toString() : '0',
+  };
+};
+
 export async function POST(
   req: NextRequest,
   { params }: { params: { projectId: string } }
@@ -59,7 +67,7 @@ export async function POST(
       data: { projectId: projectId },
     });
 
-    return NextResponse.json({ repository: updatedRepository });
+    return NextResponse.json({ repository: serializeRepository(updatedRepository) });
   } catch (error) {
     console.error('Error adding repository to project:', error);
     return NextResponse.json(
@@ -113,7 +121,7 @@ export async function DELETE(
       data: { projectId: null },
     });
 
-    return NextResponse.json({ repository: updatedRepository });
+    return NextResponse.json({ repository: serializeRepository(updatedRepository) });
   } catch (error) {
     console.error('Error removing repository from project:', error);
     return NextResponse.json(

@@ -5,14 +5,18 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { 
-  Sparkles, 
-  Star, 
-  GitFork, 
+import {
+  Sparkles,
+  Star,
+  GitFork,
   Clock,
   Code2,
   ExternalLink,
-  History
+  History,
+  XCircle,
+  CheckCircle2,
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -22,6 +26,12 @@ interface AIAnalysis {
   projectType?: string;
   summary?: string;
   skillsDemonstrated: string[];
+  citations?: Array<{
+    claim: string;
+    filePath: string;
+    lineNumber: number;
+    codeSnippet: string;
+  }>;
 }
 
 interface Repository {
@@ -62,6 +72,9 @@ export default function RepositoryList({
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState<string | null>(null);
   const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number } | null>(null);
+  const [cancelled, setCancelled] = useState(false);
+  const [repoStatus, setRepoStatus] = useState<Record<string, 'pending' | 'running' | 'completed' | 'failed'>>({});
+  const [failedRepos, setFailedRepos] = useState<Set<string>>(new Set());
 
   const [autoStatus, setAutoStatus] = useState<string | null>(null);
 
@@ -189,7 +202,7 @@ export default function RepositoryList({
     handleAnalyze(repoId);
   };
 
-  const handleBulkAnalyze = async (skipConfirm = false) => {
+  const handleBulkAnalyze = async (skipConfirm = false, repoIdsToAnalyze?: string[]) => {
     // Refresh repositories to respect the latest hide/show changes before analyzing
     let currentRepos = repositories;
     try {
@@ -205,9 +218,14 @@ export default function RepositoryList({
       console.error('Refresh before bulk analyze failed:', err);
     }
 
-    // Only analyze repositories that are NOT excluded and NOT already analyzed
-    const toAnalyze = currentRepos.filter(r => !r.isExcluded && !r.aiAnalysis);
-    
+    // Determine which repos to analyze
+    let toAnalyze: Repository[];
+    if (repoIdsToAnalyze) {
+      toAnalyze = currentRepos.filter(r => repoIdsToAnalyze.includes(r.id) && !r.isExcluded);
+    } else {
+      toAnalyze = currentRepos.filter(r => !r.isExcluded && !r.aiAnalysis);
+    }
+
     if (toAnalyze.length === 0) {
       const unanalyzedCount = repositories.filter(r => !r.aiAnalysis).length;
       if (unanalyzedCount > 0) {
@@ -223,32 +241,72 @@ export default function RepositoryList({
     }
 
     onAnalysisStart?.();
+    setCancelled(false);
     setBulkProgress({ current: 0, total: toAnalyze.length });
+    setFailedRepos(new Set());
+
+    const initialStatus: Record<string, 'pending' | 'running' | 'completed' | 'failed'> = {};
+    toAnalyze.forEach(r => { initialStatus[r.id] = 'pending'; });
+    setRepoStatus(initialStatus);
     onAutoTriggerHandled?.(); // Clear trigger once started
-    
+
     let completed = 0;
+    let failed = 0;
     for (const repo of toAnalyze) {
+      if (cancelled) {
+        toast.info(`Analysis cancelled. ${completed}/${toAnalyze.length} completed.`);
+        break;
+      }
+
       // Skip if repository became excluded between refresh and execution
       if (repo.isExcluded) {
         continue;
       }
+
+      setRepoStatus(prev => ({ ...prev, [repo.id]: 'running' }));
+      setAnalyzing(repo.id);
+
       try {
         console.log(`Starting bulk analysis for: ${repo.name}`);
         await runAnalysis(repo.id);
         completed++;
         console.log(`Completed bulk analysis for: ${repo.name} (${completed}/${toAnalyze.length})`);
+        setRepoStatus(prev => ({ ...prev, [repo.id]: 'completed' }));
       } catch (e) {
         console.error(`Failed to analyze ${repo.name}:`, e);
+        failed++;
+        setRepoStatus(prev => ({ ...prev, [repo.id]: 'failed' }));
+        setFailedRepos(prev => new Set([...prev, repo.id]));
         // Continue with others even if one fails
       }
+
+      setAnalyzing(null);
       // Update progress immediately after each attempt (success or fail)
-      setBulkProgress({ current: completed, total: toAnalyze.length });
+      setBulkProgress({ current: completed + failed, total: toAnalyze.length });
     }
 
-    toast.success(`Bulk analysis completed! (${completed}/${toAnalyze.length} successful)`);
+    if (!cancelled) {
+      toast.success(`Bulk analysis completed! (${completed}/${toAnalyze.length} successful, ${failed} failed)`);
+    }
     setBulkProgress(null);
+    setAnalyzing(null);
     onAnalysisEnd?.();
     fetchRepositories();
+  };
+
+  const handleRetryFailed = () => {
+    const failedIds = Array.from(failedRepos);
+    if (failedIds.length === 0) {
+      toast.info('No failed repositories to retry.');
+      return;
+    }
+    handleBulkAnalyze(true, failedIds);
+  };
+
+  const handleCancelAnalysis = () => {
+    if (confirm('Cancel the current analysis? Progress will be saved for completed repositories.')) {
+      setCancelled(true);
+    }
   };
 
   const toggleFeatured = async (repoId: string, currentValue: boolean) => {
@@ -287,6 +345,11 @@ export default function RepositoryList({
     );
   }
 
+  const analyzedCount = repositories.filter(r => !r.isExcluded && r.aiAnalysis).length;
+  const pendingCount = repositories.filter(r => !r.isExcluded && !r.aiAnalysis).length;
+  const failedCount = failedRepos.size;
+  const totalActive = analyzedCount + pendingCount;
+
   if (repositories?.length === 0) {
     return (
       <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-8">
@@ -308,16 +371,69 @@ export default function RepositoryList({
         <Card className="bg-slate-800/50 border-slate-700 p-4 mb-4 animate-in fade-in">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-white">Analyzing Repositories...</span>
-            <span className="text-sm text-slate-400">{bulkProgress.current} / {bulkProgress.total}</span>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-slate-400">{bulkProgress.current} / {bulkProgress.total}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCancelAnalysis}
+                className="border-red-500/50 text-red-300 hover:bg-red-500/10 h-7 px-3"
+              >
+                <XCircle className="h-3 w-3 mr-1" />
+                Cancel
+              </Button>
+            </div>
           </div>
           <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-            <div 
+            <div
               className="h-full bg-purple-500 transition-all duration-500"
               style={{ width: `${(bulkProgress.current / bulkProgress.total) * 100}%` }}
             />
           </div>
+          {failedRepos.size > 0 && (
+            <div className="mt-3 flex items-center justify-between">
+              <span className="text-xs text-red-400">{failedRepos.size} failed</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRetryFailed}
+                className="border-orange-500/50 text-orange-300 hover:bg-orange-500/10 h-7 px-3"
+              >
+                <RefreshCw className="h-3 w-3 mr-1" />
+                Retry Failed
+              </Button>
+            </div>
+          )}
         </Card>
       )}
+
+      <Card className="bg-slate-800/40 border-slate-700 p-4">
+        <div className="flex flex-wrap gap-3 items-center text-sm text-slate-200">
+          <span className="font-semibold">Analysis status:</span>
+          <Badge variant="outline" className="border-green-500/50 text-green-300 bg-green-500/5">
+            Completed {analyzedCount}
+          </Badge>
+          <Badge variant="outline" className="border-amber-500/50 text-amber-300 bg-amber-500/5">
+            Pending {pendingCount}
+          </Badge>
+          <Badge variant="outline" className="border-red-500/50 text-red-300 bg-red-500/5">
+            Failed {failedCount}
+          </Badge>
+          <Badge variant="outline" className="border-blue-500/50 text-blue-300 bg-blue-500/5">
+            Total {totalActive}
+          </Badge>
+          {failedCount > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleRetryFailed}
+              className="ml-auto border-orange-500/50 text-orange-300 hover:bg-orange-500/10 h-8"
+            >
+              Retry failed
+            </Button>
+          )}
+        </div>
+      </Card>
 
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-white">Your Repositories ({repositories?.length ?? 0})</h2>
@@ -346,6 +462,23 @@ export default function RepositoryList({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
                     <h3 className="text-lg font-semibold text-white truncate">{repo?.name}</h3>
+                    {repoStatus[repo.id] && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[10px]",
+                          repoStatus[repo.id] === 'running' && "border-blue-500/50 text-blue-300 bg-blue-500/5",
+                          repoStatus[repo.id] === 'completed' && "border-green-500/50 text-green-300 bg-green-500/5",
+                          repoStatus[repo.id] === 'failed' && "border-red-500/50 text-red-300 bg-red-500/5",
+                          repoStatus[repo.id] === 'pending' && "border-slate-500/50 text-slate-400 bg-slate-500/5"
+                        )}
+                      >
+                        {repoStatus[repo.id] === 'running' && <Loader2 className="h-2 w-2 mr-1 animate-spin" />}
+                        {repoStatus[repo.id] === 'completed' && <CheckCircle2 className="h-2 w-2 mr-1" />}
+                        {repoStatus[repo.id] === 'failed' && <XCircle className="h-2 w-2 mr-1" />}
+                        {repoStatus[repo.id]?.toUpperCase()}
+                      </Badge>
+                    )}
                     {new Date(repo.createdAt).getTime() > Date.now() - 24 * 60 * 60 * 1000 && (
                       <Badge className="bg-green-500/20 text-green-300 border-green-500/50">
                         NEW
@@ -436,6 +569,51 @@ export default function RepositoryList({
                           ))}
                         </div>
                       )}
+
+                      {(() => {
+                        const raw = (repo as any)?.aiAnalysis?.citations;
+                        const citations = Array.isArray(raw)
+                          ? raw
+                          : typeof raw === 'string'
+                            ? (() => {
+                                try {
+                                  const parsed = JSON.parse(raw);
+                                  return Array.isArray(parsed) ? parsed : [];
+                                } catch {
+                                  return [];
+                                }
+                              })()
+                            : [];
+
+                        if (citations.length === 0) return null;
+
+                        return (
+                        <div className="mt-4 border-t border-slate-700 pt-3">
+                          <p className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1">
+                            <Sparkles className="w-3 h-3" />
+                            Evidence ({citations.length})
+                          </p>
+                          <div className="space-y-2">
+                            {citations.slice(0, 3).map((citation, idx) => (
+                              <div key={idx} className="bg-slate-900/50 rounded p-2 text-xs">
+                                <p className="text-slate-300 mb-1">{citation.claim}</p>
+                                <div className="flex items-center gap-2 text-slate-500">
+                                  <span className="font-mono text-[10px] bg-slate-800 px-1 rounded">{citation.filePath}:{citation.lineNumber}</span>
+                                </div>
+                                <code className="block mt-1 text-slate-400 font-mono text-[10px] overflow-hidden text-ellipsis whitespace-nowrap">
+                                  {citation.codeSnippet}
+                                </code>
+                              </div>
+                            ))}
+                            {citations.length > 3 && (
+                              <p className="text-xs text-slate-500 text-center">
+                                +{citations.length - 3} more citations
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        );
+                      })()}
 
                       {repo?.lastAnalyzedAt && (
                         <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">

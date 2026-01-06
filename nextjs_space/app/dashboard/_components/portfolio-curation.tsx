@@ -39,6 +39,27 @@ interface Project {
   repositories: Repository[];
 }
 
+type AutoCuratePlan = {
+  excludedRepoIds: string[];
+  projects: Array<{
+    name: string;
+    description: string;
+    repositoryIds: string[];
+  }>;
+  reasoning?: string;
+};
+
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 20000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export function PortfolioCuration() {
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -53,6 +74,11 @@ export function PortfolioCuration() {
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [resetConfirm, setResetConfirm] = useState('');
   const [isResetting, setIsResetting] = useState(false);
+  const [dragOverProjectId, setDragOverProjectId] = useState<string | null>(null);
+  const [dragOverUngrouped, setDragOverUngrouped] = useState(false);
+  const [isAutoCuratePreviewOpen, setIsAutoCuratePreviewOpen] = useState(false);
+  const [autoCuratePlan, setAutoCuratePlan] = useState<AutoCuratePlan | null>(null);
+  const [isApplyingAutoCuratePlan, setIsApplyingAutoCuratePlan] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -65,23 +91,59 @@ export function PortfolioCuration() {
 
     try {
       setIsAutoCurating(true);
-      const toastId = toast.loading('AI is organizing your portfolio...');
+      const toastId = toast.loading('Generating a proposed grouping plan...');
 
-      const res = await fetch('/api/curate/auto', {
+      const res = await fetchWithTimeout('/api/curate/auto', {
         method: 'POST',
-      });
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ intent: 'manual', mode: 'preview' }),
+      }, 60000);
 
       const data = await res.json();
 
-      if (!res.ok) throw new Error(data.error || 'Failed to auto-curate');
+      if (!res.ok) throw new Error(data.error || 'Failed to generate auto-curate preview');
+      if (!data?.plan) throw new Error('Missing preview plan');
 
-      toast.success(`Done! Created ${data.results.projectsCreated} groups and hid ${data.results.excluded} junk repos.`, { id: toastId });
-      loadData();
+      setAutoCuratePlan(data.plan as AutoCuratePlan);
+      setIsAutoCuratePreviewOpen(true);
+      toast.success('Preview ready. Review and apply if it looks good.', { id: toastId });
     } catch (error) {
       console.error('Auto-curate error:', error);
       toast.error('Failed to auto-curate portfolio');
     } finally {
       setIsAutoCurating(false);
+    }
+  };
+
+  const applyAutoCuratePlan = async () => {
+    if (!autoCuratePlan) return;
+
+    try {
+      setIsApplyingAutoCuratePlan(true);
+      const toastId = toast.loading('Applying grouping plan...');
+
+      const res = await fetchWithTimeout('/api/curate/auto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ intent: 'manual', mode: 'apply', plan: autoCuratePlan }),
+      }, 60000);
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || 'Failed to apply auto-curate');
+
+      toast.success(
+        `Applied. Created ${data.results?.projectsCreated ?? 0} groups and hid ${data.results?.excluded ?? 0} repos.`,
+        { id: toastId }
+      );
+      setIsAutoCuratePreviewOpen(false);
+      setAutoCuratePlan(null);
+      loadData();
+    } catch (error) {
+      console.error('Auto-curate apply error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to apply auto-curate plan');
+    } finally {
+      setIsApplyingAutoCuratePlan(false);
     }
   };
 
@@ -106,10 +168,12 @@ export function PortfolioCuration() {
         throw new Error(data?.error || 'Failed to reset');
       }
 
-      toast.success('Portfolio reset complete. You can now reconnect and sync fresh.', { id: toastId });
+      toast.success('Portfolio reset complete. Please reconnect GitHub to continue.', { id: toastId });
       setIsResetDialogOpen(false);
       setResetConfirm('');
       loadData();
+      // Refresh parent connection state to show reconnect form
+      window.dispatchEvent(new CustomEvent('portfolio-reset'));
     } catch (error) {
       console.error('Reset error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to reset portfolio');
@@ -123,8 +187,8 @@ export function PortfolioCuration() {
       setLoading(true);
       console.log('PortfolioCuration: Loading data...');
       const [reposRes, projectsRes] = await Promise.all([
-        fetch(`/api/repositories?t=${Date.now()}`),
-        fetch(`/api/projects?t=${Date.now()}`),
+        fetchWithTimeout(`/api/repositories?t=${Date.now()}`),
+        fetchWithTimeout(`/api/projects?t=${Date.now()}`),
       ]);
 
       if (reposRes.ok) {
@@ -363,6 +427,37 @@ export function PortfolioCuration() {
     }
   };
 
+  const getDragPayload = (e: React.DragEvent): { repositoryId: string; fromProjectId?: string | null } | null => {
+    const raw = e.dataTransfer.getData('application/json');
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as any;
+      if (!parsed?.repositoryId) return null;
+      return { repositoryId: String(parsed.repositoryId), fromProjectId: parsed.fromProjectId ?? null };
+    } catch {
+      return null;
+    }
+  };
+
+  const handleDropOnProject = async (e: React.DragEvent, projectId: string) => {
+    e.preventDefault();
+    setDragOverProjectId(null);
+    const payload = getDragPayload(e);
+    if (!payload?.repositoryId) return;
+
+    if (payload.fromProjectId === projectId) return;
+    await addRepoToProject(payload.repositoryId, projectId);
+  };
+
+  const handleDropOnUngrouped = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverUngrouped(false);
+    const payload = getDragPayload(e);
+    if (!payload?.repositoryId) return;
+    if (!payload.fromProjectId) return;
+    await removeRepoFromProject(payload.fromProjectId, payload.repositoryId);
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const [filterLanguage, setFilterLanguage] = useState<string | null>(null);
 
@@ -409,14 +504,154 @@ export function PortfolioCuration() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
+      <div className="flex flex-col items-center justify-center py-12">
+        <div className="w-12 h-12 rounded-full border-4 border-purple-500/30 border-t-purple-500 animate-spin mb-4" />
         <div className="text-muted-foreground italic">Gathering your technical history...</div>
       </div>
     );
   }
 
+  const repoById = new Map(repositories.map((r) => [r.id, r] as const));
+
   return (
     <div className="space-y-6">
+      <Dialog
+        open={isAutoCuratePreviewOpen}
+        onOpenChange={(open) => {
+          setIsAutoCuratePreviewOpen(open);
+          if (!open) {
+            setAutoCuratePlan(null);
+          }
+        }}
+      >
+        <DialogContent className="bg-slate-900 border-slate-800 text-white max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-purple-300" />
+              Auto-Grouping Preview
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Review the proposed changes. Nothing will be applied until you confirm.
+            </DialogDescription>
+          </DialogHeader>
+
+          {autoCuratePlan && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-slate-950/40 border border-slate-800 rounded p-3">
+                  <p className="text-xs text-slate-400">Repos to hide</p>
+                  <p className="text-lg font-bold text-white">{autoCuratePlan.excludedRepoIds.length}</p>
+                </div>
+                <div className="bg-slate-950/40 border border-slate-800 rounded p-3">
+                  <p className="text-xs text-slate-400">Groups to create</p>
+                  <p className="text-lg font-bold text-white">{autoCuratePlan.projects.length}</p>
+                </div>
+                <div className="bg-slate-950/40 border border-slate-800 rounded p-3">
+                  <p className="text-xs text-slate-400">Repos grouped</p>
+                  <p className="text-lg font-bold text-white">
+                    {autoCuratePlan.projects.reduce((sum, p) => sum + p.repositoryIds.length, 0)}
+                  </p>
+                </div>
+              </div>
+
+              {autoCuratePlan.reasoning && (
+                <div className="bg-slate-950/40 border border-slate-800 rounded p-3">
+                  <p className="text-xs font-semibold text-slate-400 mb-1">Reasoning</p>
+                  <p className="text-sm text-slate-200 whitespace-pre-wrap">{autoCuratePlan.reasoning}</p>
+                </div>
+              )}
+
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="bg-slate-950/40 border border-slate-800 rounded p-3">
+                  <p className="text-xs font-semibold text-slate-400 mb-2">Will hide</p>
+                  {autoCuratePlan.excludedRepoIds.length === 0 ? (
+                    <p className="text-sm text-slate-500">No repositories will be hidden.</p>
+                  ) : (
+                    <div className="space-y-2 max-h-60 overflow-auto">
+                      {autoCuratePlan.excludedRepoIds.slice(0, 50).map((id) => {
+                        const r = repoById.get(id);
+                        return (
+                          <div key={id} className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm text-white truncate">{r?.name ?? id}</p>
+                              <p className="text-xs text-slate-500 truncate">{r?.description ?? ''}</p>
+                            </div>
+                            {r?.language && (
+                              <Badge variant="outline" className="border-slate-700 text-slate-300 text-[10px]">
+                                {r.language}
+                              </Badge>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {autoCuratePlan.excludedRepoIds.length > 50 && (
+                        <p className="text-xs text-slate-500">+{autoCuratePlan.excludedRepoIds.length - 50} more</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-slate-950/40 border border-slate-800 rounded p-3">
+                  <p className="text-xs font-semibold text-slate-400 mb-2">Will create groups</p>
+                  {autoCuratePlan.projects.length === 0 ? (
+                    <p className="text-sm text-slate-500">No groups will be created.</p>
+                  ) : (
+                    <div className="space-y-3 max-h-60 overflow-auto">
+                      {autoCuratePlan.projects.map((p, idx) => (
+                        <div key={`${p.name}-${idx}`} className="border border-slate-800 rounded p-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-white truncate">{p.name}</p>
+                              <p className="text-xs text-slate-500">{p.description}</p>
+                            </div>
+                            <Badge variant="outline" className="border-cyan-500/40 text-cyan-300 text-[10px]">
+                              {p.repositoryIds.length} repos
+                            </Badge>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {p.repositoryIds.slice(0, 6).map((id) => (
+                              <Badge key={id} variant="secondary" className="bg-slate-800 text-slate-300 text-[10px]">
+                                {repoById.get(id)?.name ?? id}
+                              </Badge>
+                            ))}
+                            {p.repositoryIds.length > 6 && (
+                              <Badge variant="outline" className="border-slate-700 text-slate-400 text-[10px]">
+                                +{p.repositoryIds.length - 6} more
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsAutoCuratePreviewOpen(false);
+                setAutoCuratePlan(null);
+              }}
+              disabled={isApplyingAutoCuratePlan}
+              className="border-slate-700 text-slate-200 hover:bg-slate-800"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={applyAutoCuratePlan}
+              disabled={!autoCuratePlan || isApplyingAutoCuratePlan}
+              className="bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600"
+            >
+              {isApplyingAutoCuratePlan ? 'Applying...' : 'Apply Plan'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-white">1. Select & Organize</h2>
@@ -714,7 +949,17 @@ export function PortfolioCuration() {
               </h3>
               <div className="grid gap-4">
                 {projects.map(project => (
-                  <Card key={project.id} className="bg-slate-800/40 border-slate-700 overflow-hidden">
+                  <Card
+                    key={project.id}
+                    className={`bg-slate-800/40 border-slate-700 overflow-hidden ${dragOverProjectId === project.id ? 'ring-2 ring-purple-500/60' : ''}`}
+                    onDragEnter={() => setDragOverProjectId(project.id)}
+                    onDragLeave={() => setDragOverProjectId((current) => (current === project.id ? null : current))}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragOverProjectId(project.id);
+                    }}
+                    onDrop={(e) => handleDropOnProject(e, project.id)}
+                  >
                     <div className="p-4 border-b border-slate-700 bg-slate-800/20 flex items-start justify-between">
                       <div>
                         <div className="flex items-center gap-2">
@@ -756,7 +1001,15 @@ export function PortfolioCuration() {
                     </div>
                     <div className="p-4 flex flex-wrap gap-3">
                       {project.repositories.map(repo => (
-                        <div key={repo.id} className="flex items-center gap-2 bg-slate-900/50 px-3 py-1.5 rounded-md border border-slate-700/50">
+                        <div
+                          key={repo.id}
+                          className="flex items-center gap-2 bg-slate-900/50 px-3 py-1.5 rounded-md border border-slate-700/50 cursor-grab active:cursor-grabbing"
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.effectAllowed = 'move';
+                            e.dataTransfer.setData('application/json', JSON.stringify({ repositoryId: repo.id, fromProjectId: project.id }));
+                          }}
+                        >
                           <span className="text-sm text-slate-200 font-medium">{repo.name}</span>
                           {repo.language && <span className="text-xs text-slate-500">• {repo.language}</span>}
                           <button
@@ -779,6 +1032,15 @@ export function PortfolioCuration() {
             <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
               {projects.length > 0 ? 'Remaining Repositories' : 'Individual Repositories'}
             </h3>
+            <div
+              className={`rounded-lg border border-dashed p-3 transition-colors ${dragOverUngrouped ? 'border-purple-500/60 bg-purple-500/5' : 'border-slate-800'}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOverUngrouped(true);
+              }}
+              onDragLeave={() => setDragOverUngrouped(false)}
+              onDrop={handleDropOnUngrouped}
+            >
             <div className="grid gap-3">
               {ungroupedRepos.map(repo => (
                 <Card key={repo.id} className="bg-slate-800/30 border-slate-700 hover:border-slate-600 transition-colors">
@@ -845,6 +1107,7 @@ export function PortfolioCuration() {
                   No individual repositories found matching filters.
                 </p>
               )}
+            </div>
             </div>
           </div>
         </TabsContent>

@@ -44,6 +44,17 @@ interface GitHubConnection {
   lastSyncedAt?: string;
 }
 
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 20000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export default function DashboardClient() {
   const { data: session } = useSession() || {};
   const router = useRouter();
@@ -62,18 +73,31 @@ export default function DashboardClient() {
   const [triggerAnalyze, setTriggerAnalyze] = useState(false);
   const [syncSummary, setSyncSummary] = useState<{ created: number; updated: number; skipped: number } | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchConnection();
     fetchStats();
     fetchSettings();
     fetchHighlightRepos();
+
+    // Listen for portfolio-reset event to refresh connection state
+    const handleReset = () => {
+      console.log('Portfolio reset detected, refreshing connection...');
+      fetchConnection();
+      fetchStats();
+      setSyncSummary(null);
+      setSyncError(null);
+    };
+
+    window.addEventListener('portfolio-reset', handleReset);
+    return () => window.removeEventListener('portfolio-reset', handleReset);
   }, []);
 
   const fetchStats = async () => {
     try {
       console.log('Fetching stats...');
-      const response = await fetch(`/api/portfolio/stats?t=${Date.now()}`);
+      const response = await fetchWithTimeout(`/api/portfolio/stats?t=${Date.now()}`);
       const data = await response.json();
       console.log('Stats received:', data);
       setStats(data);
@@ -85,7 +109,7 @@ export default function DashboardClient() {
   const fetchConnection = async () => {
     try {
       console.log('Fetching connection...');
-      const response = await fetch(`/api/github/connect?t=${Date.now()}`);
+      const response = await fetchWithTimeout(`/api/github/connect?t=${Date.now()}`);
       const data = await response.json();
       console.log('Connection received:', data);
       setConnection(data ?? null);
@@ -96,7 +120,7 @@ export default function DashboardClient() {
 
   const fetchSettings = async () => {
     try {
-      const response = await fetch(`/api/portfolio/settings?t=${Date.now()}`);
+      const response = await fetchWithTimeout(`/api/portfolio/settings?t=${Date.now()}`);
       const data = await response.json();
       if (data.settings) {
         setSettings(data.settings);
@@ -108,7 +132,7 @@ export default function DashboardClient() {
 
   const fetchHighlightRepos = async () => {
     try {
-      const response = await fetch(`/api/repositories?t=${Date.now()}`);
+      const response = await fetchWithTimeout(`/api/repositories?t=${Date.now()}`);
       const data = await response.json();
       const repos = data?.repositories ?? [];
       const filtered = repos.filter((r: any) => !r.isExcluded && r?.aiAnalysis?.employerHighlights);
@@ -160,7 +184,7 @@ export default function DashboardClient() {
     setLoading(true);
 
     try {
-      const response = await fetch('/api/github/connect', {
+      const response = await fetchWithTimeout('/api/github/connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ githubToken }),
@@ -186,9 +210,10 @@ export default function DashboardClient() {
 
   const handleSync = async () => {
     setSyncing(true);
+    setSyncError(null);
     console.log('Starting sync...');
     
-    const syncPromise = fetch('/api/github/sync', {
+    const syncPromise = fetchWithTimeout('/api/github/sync', {
       method: 'POST',
     }).then(async (response) => {
       const data = await response.json();
@@ -204,6 +229,7 @@ export default function DashboardClient() {
         console.log('Sync successful:', data);
         const { createdCount, updatedCount, skippedCount } = data;
         setSyncSummary({ created: createdCount, updated: updatedCount, skipped: skippedCount });
+        setSyncError(null);
         refreshData();
         let msg = `Sync complete!`;
         if (createdCount > 0) msg += ` ${createdCount} new.`;
@@ -213,6 +239,8 @@ export default function DashboardClient() {
       },
       error: (err) => {
         console.error('Sync failed:', err);
+        setSyncSummary(null);
+        setSyncError(err.message || 'Failed to sync repositories');
         return err.message || 'Failed to sync repositories';
       },
       finally: () => {
@@ -240,6 +268,20 @@ export default function DashboardClient() {
     lastSyncedAt: connection?.lastSyncedAt
   } : null;
 
+  const curationState = (() => {
+    if (!stats?.hasRepos) return { label: 'No repos', tone: 'slate' };
+    if (stats.excludedCount === 0) return { label: 'Not started', tone: 'orange' };
+    if (stats.projectCount === 0) return { label: 'Filtering', tone: 'blue' };
+    return { label: 'Organizing', tone: 'green' };
+  })();
+
+  const toneMap: Record<string, string> = {
+    slate: 'border-slate-600 text-slate-200 bg-slate-800/70',
+    orange: 'border-amber-500/50 text-amber-300 bg-amber-500/10',
+    blue: 'border-cyan-500/50 text-cyan-300 bg-cyan-500/10',
+    green: 'border-green-500/50 text-green-300 bg-green-500/10',
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-slate-900 to-cyan-900">
       {/* Header */}
@@ -253,6 +295,26 @@ export default function DashboardClient() {
               </span>
             </Link>
             <div className="flex items-center gap-4">
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] uppercase tracking-tight",
+                  toneMap[curationState.tone] ?? toneMap.slate
+                )}
+              >
+                Curation: {curationState.label}
+              </Badge>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-[10px] uppercase tracking-tight",
+                  connection?.connected
+                    ? "border-green-500/50 text-green-300 bg-green-500/10"
+                    : "border-red-500/50 text-red-300 bg-red-500/10"
+                )}
+              >
+                {connection?.connected ? "Connected to GitHub" : "Not connected"}
+              </Badge>
               {connection?.connected && connection?.githubUsername && (
                 <Link href={`/portfolio/${connection.githubUsername}`} target="_blank">
                   <Button variant="outline" className="border-slate-600 text-slate-200 hover:bg-slate-800">
@@ -508,6 +570,26 @@ export default function DashboardClient() {
           </div>
         ) : (
           <div className="space-y-8">
+            {syncError && (
+              <div className="bg-red-500/10 border border-red-500/40 p-4 rounded-xl flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-red-500/15 flex items-center justify-center">
+                  <X className="w-5 h-5 text-red-400" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-red-200 font-semibold text-sm">Sync failed</h4>
+                    <Button size="sm" variant="ghost" onClick={() => setSyncError(null)} className="text-red-200 hover:bg-red-500/10">
+                      Dismiss
+                    </Button>
+                  </div>
+                  <p className="text-red-200 text-sm">{syncError}</p>
+                  <Button size="sm" onClick={handleSync} disabled={syncing} className="mt-3 bg-red-600 hover:bg-red-500 text-xs h-8">
+                    Retry Sync
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {/* Sync Summary Banner - HIGHEST PROMINENCE */}
             {syncSummary && (syncSummary.created > 0 || syncSummary.updated > 0) && (
               <div className="bg-gradient-to-r from-green-600/20 to-emerald-600/20 border border-green-500/40 p-5 rounded-2xl flex items-start gap-5 animate-in slide-in-from-top-8 duration-700">

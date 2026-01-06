@@ -13,6 +13,23 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const dbUser = await prisma.user.findUnique({ where: { id: session.user.id } });
+    if (!dbUser) {
+      const isDev = process.env.NODE_ENV !== 'production';
+      return NextResponse.json(
+        {
+          error: 'Unauthorized',
+          ...(isDev
+            ? {
+                details: 'Session user not found in DB (stale session). Sign out and sign in again.',
+                sessionUserId: session.user.id,
+              }
+            : null),
+        },
+        { status: 401 }
+      );
+    }
+
     const settings = await prisma.portfolioSettings.findUnique({
       where: { userId: session.user.id },
     });
@@ -36,8 +53,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ settings: parsedSettings });
   } catch (error: any) {
     console.error('Fetch settings error:', error);
+    const isDev = process.env.NODE_ENV !== 'production';
     return NextResponse.json(
-      { error: 'Failed to fetch settings' },
+      {
+        error: 'Failed to fetch settings',
+        ...(isDev
+          ? {
+              details: error?.message ?? String(error),
+              code: error?.code,
+            }
+          : null),
+      },
       { status: 500 }
     );
   }
@@ -49,6 +75,23 @@ export async function POST(request: Request) {
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const dbUser = await prisma.user.findUnique({ where: { id: session.user.id } });
+    if (!dbUser) {
+      const isDev = process.env.NODE_ENV !== 'production';
+      return NextResponse.json(
+        {
+          error: 'Unauthorized',
+          ...(isDev
+            ? {
+                details: 'Session user not found in DB (stale session). Sign out and sign in again.',
+                sessionUserId: session.user.id,
+              }
+            : null),
+        },
+        { status: 401 }
+      );
     }
 
     const body = await request.json();
@@ -76,8 +119,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ settings: parsedSettings });
   } catch (error: any) {
     console.error('Update settings error:', error);
+    const isDev = process.env.NODE_ENV !== 'production';
     return NextResponse.json(
-      { error: 'Failed to update settings' },
+      {
+        error: 'Failed to update settings',
+        ...(isDev
+          ? {
+              details: error?.message ?? String(error),
+              code: error?.code,
+            }
+          : null),
+      },
       { status: 500 }
     );
   }

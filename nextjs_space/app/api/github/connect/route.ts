@@ -15,6 +15,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const dbUser = await prisma.user.findUnique({ where: { id: session.user.id } });
+    if (!dbUser) {
+      const isDev = process.env.NODE_ENV !== 'production';
+      return NextResponse.json(
+        {
+          error: 'Unauthorized',
+          ...(isDev
+            ? {
+                details: 'Session user not found in DB (stale session). Sign out and sign in again.',
+                sessionUserId: session.user.id,
+              }
+            : null),
+        },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     const { githubToken } = body ?? {};
 
@@ -60,8 +77,18 @@ export async function POST(request: Request) {
     });
   } catch (error: any) {
     console.error('GitHub connect error:', error);
+
+    const isDev = process.env.NODE_ENV !== 'production';
     return NextResponse.json(
-      { error: 'Failed to connect GitHub account' },
+      {
+        error: 'Failed to connect GitHub account',
+        ...(isDev
+          ? {
+              details: error?.message ?? String(error),
+              code: error?.code,
+            }
+          : null),
+      },
       { status: 500 }
     );
   }
@@ -73,6 +100,23 @@ export async function GET(request: Request) {
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const dbUser = await prisma.user.findUnique({ where: { id: session.user.id } });
+    if (!dbUser) {
+      const isDev = process.env.NODE_ENV !== 'production';
+      return NextResponse.json(
+        {
+          error: 'Unauthorized',
+          ...(isDev
+            ? {
+                details: 'Session user not found in DB (stale session). Sign out and sign in again.',
+                sessionUserId: session.user.id,
+              }
+            : null),
+        },
+        { status: 401 }
+      );
     }
 
     const connection = await prisma.gitHubConnection.findUnique({
@@ -93,8 +137,18 @@ export async function GET(request: Request) {
     });
   } catch (error: any) {
     console.error('GitHub connection check error:', error);
+
+    const isDev = process.env.NODE_ENV !== 'production';
     return NextResponse.json(
-      { error: 'Failed to check GitHub connection' },
+      {
+        error: 'Failed to check GitHub connection',
+        ...(isDev
+          ? {
+              details: error?.message ?? String(error),
+              code: error?.code,
+            }
+          : null),
+      },
       { status: 500 }
     );
   }

@@ -45,6 +45,54 @@ export class GitHubService {
     }
   }
 
+  async getRepositoryFiles(owner: string, repo: string, path: string = '', maxFiles: number = 10): Promise<Array<{ path: string; content: string; sha: string }>> {
+    try {
+      const { data } = await this.octokit.repos.getContent({
+        owner,
+        repo,
+        path,
+      });
+
+      if (!Array.isArray(data)) {
+        return [];
+      }
+
+      const files: Array<{ path: string; content: string; sha: string }> = [];
+      let count = 0;
+
+      for (const item of data) {
+        if (count >= maxFiles) break;
+
+        if (item.type === 'file' && !item.name.match(/\.(png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|pdf|zip|tar|gz)$/i)) {
+          try {
+            const { data: fileData } = await this.octokit.repos.getContent({
+              owner,
+              repo,
+              path: item.path,
+            });
+
+            if ('content' in fileData && typeof fileData.content === 'string') {
+              const content = Buffer.from(fileData.content, 'base64').toString('utf-8');
+              files.push({
+                path: item.path,
+                content: content.substring(0, 3000),
+                sha: fileData.sha,
+              });
+              count++;
+            }
+          } catch (err) {
+            console.warn(`Failed to fetch file ${item.path}:`, err);
+          }
+        }
+      }
+
+      return files;
+    } catch (error: any) {
+      console.error('Failed to fetch repository files:', error?.message);
+      return [];
+    }
+  }
+
   async getUserRepositories(username: string): Promise<GitHubRepo[]> {
     try {
       const repos: GitHubRepo[] = [];

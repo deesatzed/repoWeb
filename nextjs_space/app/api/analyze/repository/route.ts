@@ -5,6 +5,8 @@ import prisma from '@/lib/db';
 import { redactForLLM } from '@/lib/redaction';
 import { RepositoryAnalysisSchema } from '@/lib/analysis-schemas';
 import { analyzeJSON } from '@/lib/llm';
+import { GitHubService } from '@/lib/github-api';
+import { decrypt } from '@/lib/encryption';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,6 +62,22 @@ export async function POST(request: Request) {
       }
     };
 
+    // Fetch repository files for evidence-backed analysis
+    let fileContents: Array<{ path: string; content: string }> = [];
+    try {
+      const gitHubConnection = await prisma.gitHubConnection.findFirst({
+        where: { userId: session.user.id },
+      });
+
+      if (gitHubConnection?.githubToken) {
+        const githubService = new GitHubService(gitHubConnection.githubToken);
+        const [owner, repoName] = repository.name.split('/');
+        fileContents = await githubService.getRepositoryFiles(owner, repoName, '', 8);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch repository files for analysis:', err);
+    }
+
     // Prepare context for AI analysis
     const context = {
       name: repository.name,
@@ -75,10 +93,14 @@ export async function POST(request: Request) {
       languages: repository.languages ?? {},
       isPrivate: repository.isPrivate,
       isFork: repository.isFork,
+      files: fileContents.slice(0, 5).map(f => ({
+        path: f.path,
+        content: f.content.substring(0, 1500),
+      })),
     };
 
-    const prompt = `You are a cynical, high-bar CTO reviewing a candidate's code repository to determine if they are worth interviewing. 
-    
+    const prompt = `You are a cynical, high-bar CTO reviewing a candidate's code repository to determine if they are worth interviewing.
+
     Repository Context:
     - Name: ${context.name}
     - Description: ${context.description}
@@ -86,20 +108,30 @@ export async function POST(request: Request) {
     - Topics: ${context.topics.join(', ')}
     - Stars/Forks: ${context.stars} / ${context.forks}
     - README Preview: ${context.readme.substring(0, 1500)}
-    
-    TASK: Deep technical analysis for a "Senior Engineer" or "Lead" role. 
-    
+
+    ${context.files.length > 0 ? `
+    Sample Files for Evidence-Based Analysis:
+    ${context.files.map(f => `
+    File: ${f.path}
+    Content:
+    ${f.content}
+    `).join('\n---\n')}
+    ` : ''}
+
+    TASK: Deep technical analysis for a "Senior Engineer" or "Lead" role.
+
     CRITICAL INSTRUCTIONS:
     1. EVIDENCE-BASED ONLY: Do not say "excellent code quality" unless you cite specific patterns (e.g., "Dependency injection used for service layers", "Comprehensive unit testing with Jest").
     2. EMPLOYER FOCUS: What ROI does this person bring? Do they solve hard problems (scalability, security, performance) or just build CRUD apps?
     3. DETECT JUNK/TUTORIALS: If this is a tutorial-style repo, be blunt. If it's a fork with zero changes, flag it.
     4. PERSONA: You are looking for system thinking, architectural awareness, and production readiness.
-    
+    5. CITATIONS: For each key claim (strengths, features, patterns), provide a citation with the file path, line number (approximate), and a short code snippet.
+
     Analyze specifically for:
     - ARCHITECTURAL DEPTH: MVC, Microservices, Event-driven, DDD, etc.
     - OPERATIONAL EXCELLENCE: CI/CD, Monitoring, Error handling, Logging.
     - DOMAIN EXPERTISE: Does this show deep knowledge of ${context.language} or specific industries (e.g. Fintech, Healthcare)?
-    
+
     Respond with raw JSON only in this exact structure:
     {
       "complexityScore": <number 0-100, be strict, tutorial=10, production=90>,
@@ -117,9 +149,17 @@ export async function POST(request: Request) {
       "hasTests": <boolean>,
       "hasDocumentation": <boolean>,
       "hasCiCd": <boolean>,
-      "contributionPattern": "<Solo Project|Team Collaboration|Open Source>"
+      "contributionPattern": "<Solo Project|Team Collaboration|Open Source>",
+      "citations": [
+        {
+          "claim": "Specific claim about code quality or architecture",
+          "filePath": "path/to/file.ext",
+          "lineNumber": <number>,
+          "codeSnippet": "<short code excerpt (max 500 chars) supporting the claim>"
+        }
+      ]
     }
-    
+
     Respond with raw JSON only.`;
 
     // Create a stream for SSE
@@ -179,6 +219,7 @@ export async function POST(request: Request) {
               hasDocumentation: finalAnalysis.hasDocumentation,
               hasCiCd: finalAnalysis.hasCiCd,
               contributionPattern: finalAnalysis.contributionPattern,
+              citations: JSON.stringify(finalAnalysis.citations ?? []) as any,
               updatedAt: new Date(),
             },
             create: {
@@ -199,6 +240,7 @@ export async function POST(request: Request) {
               hasDocumentation: finalAnalysis.hasDocumentation,
               hasCiCd: finalAnalysis.hasCiCd,
               contributionPattern: finalAnalysis.contributionPattern,
+              citations: JSON.stringify(finalAnalysis.citations ?? []) as any,
             },
           });
 

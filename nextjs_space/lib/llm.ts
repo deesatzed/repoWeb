@@ -1,7 +1,7 @@
 
+import 'server-only';
 import OpenAI from 'openai';
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 // User-selected model; default to a higher-quality option
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'z-ai/glm-4.7';
 
@@ -10,13 +10,15 @@ let openai: OpenAI | null = null;
 function getClient(): OpenAI {
   if (openai) return openai;
 
-  if (!OPENROUTER_API_KEY) {
+  const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY is not set. Please configure it in your .env file.');
   }
 
   openai = new OpenAI({
     baseURL: 'https://openrouter.ai/api/v1',
-    apiKey: OPENROUTER_API_KEY,
+    apiKey,
     // OpenRouter specific headers
     defaultHeaders: {
       'HTTP-Referer': 'https://reponexus.dev', 

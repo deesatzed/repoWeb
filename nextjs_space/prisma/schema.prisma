@@ -130,6 +130,7 @@ model AIAnalysis {
   hasDocumentation      Boolean  @default(false)
   hasCiCd               Boolean  @default(false)
   contributionPattern   String?  // "Solo Project", "Team Collaboration", "Open Source"
+  citations             String @default("[]") // JSON array of {claim, filePath, lineNumber, codeSnippet}
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
   repository            Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)

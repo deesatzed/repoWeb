@@ -27,6 +27,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Require explicit user intent to prevent accidental auto-runs
+    const body = await request.json().catch(() => ({}));
+    if (body?.intent !== 'manual') {
+      return NextResponse.json(
+        { error: 'Auto-curate requires explicit intent' },
+        { status: 400 }
+      );
+    }
+
+    const mode: 'preview' | 'apply' = body?.mode === 'preview' ? 'preview' : 'apply';
+
     // 1. Fetch all repositories for the user
     const repositories = await prisma.repository.findMany({
       where: {
@@ -49,6 +60,27 @@ export async function POST(request: Request) {
     if (repositories.length === 0) {
       return NextResponse.json({ message: 'No repositories to curate' });
     }
+
+    const userRepoIdSet = new Set(repositories.map((r) => r.id));
+
+    const validateOwnership = (plan: z.infer<typeof AutoCurateSchema>) => {
+      const unknownRepoIds: string[] = [];
+
+      for (const id of plan.excludedRepoIds ?? []) {
+        if (!userRepoIdSet.has(id)) unknownRepoIds.push(id);
+      }
+      for (const project of plan.projects ?? []) {
+        for (const id of project.repositoryIds ?? []) {
+          if (!userRepoIdSet.has(id)) unknownRepoIds.push(id);
+        }
+      }
+
+      if (unknownRepoIds.length > 0) {
+        return { ok: false as const, unknownRepoIds };
+      }
+
+      return { ok: true as const };
+    };
 
     // 2. Prepare context for LLM
     const repoList = repositories.map(r => ({
@@ -101,25 +133,57 @@ export async function POST(request: Request) {
     }
     `;
 
-    // 3. Call LLM
-    const curationPlan = await analyzeJSON(
-      prompt, 
-      "You are a meticulous Portfolio Curator who hates clutter and loves clear, cohesive engineering narratives."
-    );
+    const validatedPlan = (() => {
+      if (mode === 'apply' && body?.plan) {
+        return AutoCurateSchema.parse(body.plan);
+      }
+      return null;
+    })();
 
-    const validatedPlan = AutoCurateSchema.parse(curationPlan);
+    // 3. Call LLM (preview always generates; apply can either generate or use provided plan)
+    const finalPlan = validatedPlan
+      ? validatedPlan
+      : AutoCurateSchema.parse(
+          await analyzeJSON(
+            prompt,
+            'You are a meticulous Portfolio Curator who hates clutter and loves clear, cohesive engineering narratives.'
+          )
+        );
 
-    // 4. Execute Plan
+    const ownership = validateOwnership(finalPlan);
+    if (!ownership.ok) {
+      return NextResponse.json(
+        { error: 'Plan contains unknown repositories', unknownRepoIds: ownership.unknownRepoIds },
+        { status: 400 }
+      );
+    }
+
+    if (mode === 'preview') {
+      const projectRepoCount = finalPlan.projects.reduce((sum, p) => sum + p.repositoryIds.length, 0);
+      return NextResponse.json({
+        success: true,
+        mode,
+        plan: finalPlan,
+        preview: {
+          excludedCount: finalPlan.excludedRepoIds.length,
+          projectsCount: finalPlan.projects.length,
+          projectRepoCount,
+        },
+      });
+    }
+
+    // 4. Execute Plan (apply)
     const results = {
       excluded: 0,
       projectsCreated: 0,
+      reposAssigned: 0,
     };
 
     // A. Exclude Junk
-    if (validatedPlan.excludedRepoIds.length > 0) {
+    if (finalPlan.excludedRepoIds.length > 0) {
       const updateResult = await prisma.repository.updateMany({
         where: {
-          id: { in: validatedPlan.excludedRepoIds },
+          id: { in: finalPlan.excludedRepoIds },
           githubConnection: { userId: session.user.id } // Safety check
         },
         data: { isExcluded: true },
@@ -128,7 +192,7 @@ export async function POST(request: Request) {
     }
 
     // B. Create Projects & Link Repos
-    for (const projectPlan of validatedPlan.projects) {
+    for (const projectPlan of finalPlan.projects) {
       if (projectPlan.repositoryIds.length === 0) continue;
 
       // Create Project
@@ -143,11 +207,13 @@ export async function POST(request: Request) {
         },
       });
       results.projectsCreated++;
+      results.reposAssigned += projectPlan.repositoryIds.length;
     }
 
     return NextResponse.json({ 
       success: true, 
-      plan: validatedPlan,
+      mode,
+      plan: finalPlan,
       results 
     });
 
