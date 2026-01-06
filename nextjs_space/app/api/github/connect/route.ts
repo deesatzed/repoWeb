@@ -5,6 +5,7 @@ import { auth } from '@/lib/auth';
 import prisma from '@/lib/db';
 import { encrypt } from '@/lib/encryption';
 import { GitHubService } from '@/lib/github-api';
+import { transitionWorkflowState } from '@/lib/workflow-state';
 
 export async function POST(request: Request) {
   try {
@@ -69,6 +70,13 @@ export async function POST(request: Request) {
         githubToken: encryptedToken,
       },
     });
+
+    // Transition workflow state to CONNECTED
+    await transitionWorkflowState(
+      session.user.id,
+      'CONNECTED',
+      `Connected GitHub account: ${githubUser?.login}`
+    );
 
     return NextResponse.json({
       success: true,

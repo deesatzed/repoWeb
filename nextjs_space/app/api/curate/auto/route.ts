@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth';
 import prisma from '@/lib/db';
 import { analyzeJSON } from '@/lib/llm';
 import { z } from 'zod';
+import { validateWorkflowAction, transitionWorkflowState } from '@/lib/workflow-state';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +25,26 @@ export async function POST(request: Request) {
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // WORKFLOW VALIDATION: Cannot auto-curate until all repos are analyzed
+    const workflowCheck = await validateWorkflowAction(
+      session.user.id,
+      'ANALYZED',
+      'generate AI grouping suggestions'
+    );
+
+    if (!workflowCheck.allowed) {
+      return NextResponse.json(
+        {
+          error: 'Workflow validation failed',
+          reason: workflowCheck.reason,
+          currentState: workflowCheck.currentState,
+          requiredState: 'ANALYZED',
+          hint: 'All included repositories must be analyzed before AI can suggest groupings',
+        },
+        { status: 403 }
+      );
     }
 
     // Require explicit user intent to prevent accidental auto-runs
@@ -209,11 +230,18 @@ export async function POST(request: Request) {
       results.reposAssigned += projectPlan.repositoryIds.length;
     }
 
-    return NextResponse.json({ 
-      success: true, 
+    // Transition workflow state to GROUPING_SUGGESTED after successful AI curation
+    await transitionWorkflowState(
+      session.user.id,
+      'GROUPING_SUGGESTED',
+      'AI generated grouping suggestions and applied them'
+    );
+
+    return NextResponse.json({
+      success: true,
       mode,
       plan: finalPlan,
-      results 
+      results
     });
 
   } catch (error: any) {

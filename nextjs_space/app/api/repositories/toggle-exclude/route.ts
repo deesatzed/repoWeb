@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import prisma from '@/lib/db';
+import { transitionWorkflowState, getCurrentWorkflowState } from '@/lib/workflow-state';
 
 export async function POST(req: NextRequest) {
   try {
@@ -37,6 +38,25 @@ export async function POST(req: NextRequest) {
       where: { id: repositoryId },
       data: { isExcluded: isExcluded ?? false },
     });
+
+    // Check if user has made curation decisions (at least one included repo)
+    const currentState = await getCurrentWorkflowState(session.user.id);
+    if (currentState === 'SYNCED') {
+      const includedCount = await prisma.repository.count({
+        where: {
+          githubConnection: { userId: session.user.id },
+          isExcluded: false,
+        },
+      });
+
+      if (includedCount > 0) {
+        await transitionWorkflowState(
+          session.user.id,
+          'CURATED',
+          'User made curation decisions (include/exclude)'
+        );
+      }
+    }
 
     return NextResponse.json({
       repository: {

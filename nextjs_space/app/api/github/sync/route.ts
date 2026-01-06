@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import prisma from '@/lib/db';
 import { GitHubService } from '@/lib/github-api';
+import { transitionWorkflowState } from '@/lib/workflow-state';
 
 export async function POST(request: Request) {
   try {
@@ -111,6 +112,15 @@ export async function POST(request: Request) {
       where: { id: connection.id },
       data: { lastSyncedAt: new Date() },
     });
+
+    // Transition workflow state to SYNCED
+    if (repos && repos.length > 0) {
+      await transitionWorkflowState(
+        session.user.id,
+        'SYNCED',
+        `Synced ${repos.length} repositories`
+      );
+    }
 
     return NextResponse.json({
       success: true,

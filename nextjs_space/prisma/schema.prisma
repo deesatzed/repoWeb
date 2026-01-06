@@ -136,6 +136,17 @@ model AIAnalysis {
   repository            Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
 }
 
+enum PortfolioWorkflowState {
+  INITIAL              // Just created, no GitHub connection
+  CONNECTED            // GitHub connected, no repos synced
+  SYNCED               // Repos synced, needs curation
+  CURATED              // Include/exclude decisions made
+  ANALYZING            // Analysis in progress
+  ANALYZED             // All included repos analyzed
+  GROUPING_SUGGESTED   // AI grouping suggestions generated
+  FINALIZED            // User approved, ready for employers
+}
+
 model PortfolioSettings {
   id                    String   @id @default(cuid())
   userId                String   @unique
@@ -153,6 +164,12 @@ model PortfolioSettings {
   showSkillsBreakdown   Boolean  @default(true)
   featuredSection       String? // JSON config for featured section
   customSections        Json?    // Custom sections configuration
+
+  // Workflow enforcement fields
+  workflowState         PortfolioWorkflowState @default(INITIAL)
+  workflowLockedAt      DateTime?  // When state was locked (during ANALYZING)
+  stateTransitionLog    Json?      // Audit trail: [{from, to, timestamp, reason}]
+
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
   user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
