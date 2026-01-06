@@ -1,5 +1,5 @@
-import { NextAuthOptions } from 'next-auth';
-import { PrismaAdapter } from '@next-auth/prisma-adapter';
+import type { NextAuthConfig } from 'next-auth';
+import { PrismaAdapter } from '@auth/prisma-adapter';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
 import GitHubProvider from 'next-auth/providers/github';
@@ -58,13 +58,13 @@ providers.push(
       email: { label: 'Email', type: 'email' },
       password: { label: 'Password', type: 'password' },
     },
-    async authorize(credentials) {
+    async authorize(credentials): Promise<any> {
       if (!credentials?.email || !credentials?.password) {
         throw new Error('Invalid credentials');
       }
 
       const user = await prisma.user.findUnique({
-        where: { email: credentials.email },
+        where: { email: credentials.email as string },
       });
 
       if (!user || !user?.password) {
@@ -72,7 +72,7 @@ providers.push(
       }
 
       const isCorrectPassword = await bcrypt.compare(
-        credentials.password,
+        credentials.password as string,
         user.password
       );
 
@@ -90,8 +90,8 @@ providers.push(
   })
 );
 
-export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
+export const authOptions: NextAuthConfig = {
+  adapter: PrismaAdapter(prisma) as any,
   session: {
     strategy: 'jwt',
   },
