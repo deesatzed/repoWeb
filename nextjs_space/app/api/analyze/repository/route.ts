@@ -6,6 +6,7 @@ import { RepositoryAnalysisSchema } from '@/lib/analysis-schemas';
 import { analyzeJSON } from '@/lib/llm';
 import { GitHubService } from '@/lib/github-api';
 import { decrypt } from '@/lib/encryption';
+import { getCurrentWorkflowState, transitionWorkflowState } from '@/lib/workflow-state';
 
 export const dynamic = 'force-dynamic';
 
@@ -248,6 +249,46 @@ export async function POST(request: Request) {
             where: { id: repository.id },
             data: { lastAnalyzedAt: new Date() },
           });
+
+          // WORKFLOW STATE MANAGEMENT
+          const currentState = await getCurrentWorkflowState(session.user.id);
+
+          // Transition to ANALYZING if this is the first analysis from CURATED state
+          if (currentState === 'CURATED') {
+            await transitionWorkflowState(
+              session.user.id,
+              'ANALYZING',
+              `Started analyzing repository: ${repository.name}`
+            );
+          }
+
+          // Check if all included repos are now analyzed
+          if (currentState === 'ANALYZING' || currentState === 'CURATED') {
+            const [includedRepos, analyzedRepos] = await Promise.all([
+              prisma.repository.count({
+                where: {
+                  githubConnection: { userId: session.user.id },
+                  isExcluded: false,
+                },
+              }),
+              prisma.repository.count({
+                where: {
+                  githubConnection: { userId: session.user.id },
+                  isExcluded: false,
+                  aiAnalysis: { isNot: null },
+                },
+              }),
+            ]);
+
+            // If all included repos are analyzed, transition to ANALYZED
+            if (includedRepos > 0 && includedRepos === analyzedRepos) {
+              await transitionWorkflowState(
+                session.user.id,
+                'ANALYZED',
+                `All ${includedRepos} included repositories analyzed`
+              );
+            }
+          }
 
           // 5. Send "completed" status
           const finalData = JSON.stringify({
