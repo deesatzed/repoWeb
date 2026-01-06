@@ -13,7 +13,7 @@ const serializeRepository = (repo: any) => {
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { projectId: string } }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -22,7 +22,7 @@ export async function POST(
     }
 
     const { repositoryId } = await req.json();
-    const projectId = params.projectId;
+    const { projectId } = await params;
 
     if (!repositoryId) {
       return NextResponse.json({ error: 'Repository ID is required' }, { status: 400 });
@@ -79,7 +79,7 @@ export async function POST(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { projectId: string } }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -89,7 +89,7 @@ export async function DELETE(
 
     const { searchParams } = new URL(req.url);
     const repositoryId = searchParams.get('repositoryId');
-    const projectId = params.projectId;
+    const { projectId } = await params;
 
     if (!repositoryId) {
       return NextResponse.json({ error: 'Repository ID is required' }, { status: 400 });

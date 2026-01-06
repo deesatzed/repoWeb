@@ -6,10 +6,10 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
   request: Request,
-  { params }: { params: { username: string } }
+  { params }: { params: Promise<{ username: string }> }
 ) {
   try {
-    const username = params.username;
+    const { username } = await params;
 
     // 1. Find the user and their repositories
     const user = await prisma.user.findFirst({

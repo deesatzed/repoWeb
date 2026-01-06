@@ -4,7 +4,7 @@ import PortfolioClient from './_components/portfolio-client';
 export const dynamic = 'force-dynamic';
 
 interface PortfolioPageProps {
-  params: { username: string };
+  params: Promise<{ username: string }>;
 }
 
 async function getPortfolioData(username: string) {
@@ -26,7 +26,8 @@ async function getPortfolioData(username: string) {
 }
 
 export async function generateMetadata({ params }: PortfolioPageProps) {
-  const data = await getPortfolioData(params?.username ?? '');
+  const { username } = await params;
+  const data = await getPortfolioData(username ?? '');
 
   if (!data) {
     return {
@@ -41,7 +42,8 @@ export async function generateMetadata({ params }: PortfolioPageProps) {
 }
 
 export default async function PortfolioPage({ params }: PortfolioPageProps) {
-  const data = await getPortfolioData(params?.username ?? '');
+  const { username } = await params;
+  const data = await getPortfolioData(username ?? '');
 
   if (!data) {
     notFound();

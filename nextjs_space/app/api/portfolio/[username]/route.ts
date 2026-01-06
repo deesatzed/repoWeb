@@ -6,10 +6,10 @@ import { toPublicRepository } from '@/lib/public-dto';
 
 export async function GET(
   request: Request,
-  { params }: { params: { username: string } }
+  { params }: { params: Promise<{ username: string }> }
 ) {
   try {
-    const username = params?.username;
+    const { username } = await params;
 
     if (!username) {
       return NextResponse.json(

@@ -5,7 +5,7 @@ import prisma from '@/lib/db';
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { projectId: string } }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -14,7 +14,7 @@ export async function PATCH(
     }
 
     const { name, description, repositoryIds, isVisible } = await req.json();
-    const projectId = params.projectId;
+    const { projectId } = await params;
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
@@ -112,7 +112,7 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { projectId: string } }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -120,7 +120,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const projectId = params.projectId;
+    const { projectId } = await params;
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
