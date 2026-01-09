@@ -120,6 +120,14 @@ export default function RepositoryList({
     fetchProjects();
   }, []);
 
+  // Open create project dialog when 'create-new' is selected
+  useEffect(() => {
+    if (selectedProjectId === 'create-new') {
+      setIsCreateProjectDialogOpen(true);
+      setSelectedProjectId(null);
+    }
+  }, [selectedProjectId]);
+
   useEffect(() => {
     console.log('AutoTrigger check:', { autoTrigger, loading, repoCount: repositories.length, hasBulkProgress: !!bulkProgress });
     
