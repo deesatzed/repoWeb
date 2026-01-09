@@ -19,9 +19,28 @@ import {
   RefreshCw,
   Trash2,
   Check,
-  FolderPlus
+  FolderPlus,
+  FolderOpen,
+  ChevronDown
 } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 interface AIAnalysis {
   complexityScore?: number;
@@ -52,6 +71,14 @@ interface Repository {
   createdAt: string;
   updatedAt: string;
   aiAnalysis?: AIAnalysis;
+  projectId?: string | null;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  description?: string | null;
+  isVisible: boolean;
 }
 
 interface RepositoryListProps {
@@ -82,10 +109,15 @@ export default function RepositoryList({
   const [autoStatus, setAutoStatus] = useState<string | null>(null);
   const [selectedRepos, setSelectedRepos] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [isCreateProjectDialogOpen, setIsCreateProjectDialogOpen] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
 
   useEffect(() => {
     console.log('RepositoryList mounted');
     fetchRepositories();
+    fetchProjects();
   }, []);
 
   useEffect(() => {
@@ -117,6 +149,16 @@ export default function RepositoryList({
       if (!bulkProgress) setAutoStatus(null);
     }
   }, [autoTrigger, loading, repositories.length, bulkProgress]);
+
+  const fetchProjects = async () => {
+    try {
+      const response = await fetch('/api/projects');
+      const data = await response.json();
+      setProjects(data?.projects ?? []);
+    } catch (error) {
+      console.error('Fetch projects error:', error);
+    }
+  };
 
   const fetchRepositories = async () => {
     try {
@@ -414,11 +456,6 @@ export default function RepositoryList({
       return;
     }
 
-    if (selectedRepos.size < 2) {
-      toast.error('Select at least 2 repositories to group together');
-      return;
-    }
-
     const projectName = prompt('Enter a name for this project group:');
     if (!projectName || !projectName.trim()) {
       return;
@@ -442,6 +479,7 @@ export default function RepositoryList({
         setSelectedRepos(new Set());
         setSelectAll(false);
         fetchRepositories();
+        fetchProjects();
       } else {
         toast.error(data.error || 'Failed to create project');
       }
@@ -449,6 +487,87 @@ export default function RepositoryList({
       console.error('Group error:', error);
       toast.error('Failed to create project');
     }
+  };
+
+  const handleMoveToProject = async (projectId: string | null) => {
+    if (selectedRepos.size === 0) {
+      toast.error('No repositories selected');
+      return;
+    }
+
+    if (projectId === 'create-new') {
+      setIsCreateProjectDialogOpen(true);
+      return;
+    }
+
+    try {
+      const repoIds = Array.from(selectedRepos);
+      const toastId = toast.loading(`Moving ${repoIds.length} repository${repoIds.length !== 1 ? 'ies' : ''}...`);
+
+      // Move each repo to the selected project
+      for (const repoId of repoIds) {
+        await fetch('/api/repositories', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repositoryId: repoId,
+            updates: { projectId },
+          }),
+        });
+      }
+
+      toast.success(`Successfully moved ${repoIds.length} repository${repoIds.length !== 1 ? 'ies' : ''}`, { id: toastId });
+      setSelectedRepos(new Set());
+      setSelectAll(false);
+      setSelectedProjectId(null);
+      fetchRepositories();
+      fetchProjects();
+    } catch (error: any) {
+      console.error('Move error:', error);
+      toast.error('Failed to move repositories');
+    }
+  };
+
+  const handleCreateProject = async () => {
+    if (!newProjectName.trim()) {
+      toast.error('Project name is required');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newProjectName.trim(),
+          description: '',
+          repositoryIds: Array.from(selectedRepos),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success('Project created successfully');
+        setIsCreateProjectDialogOpen(false);
+        setNewProjectName('');
+        setSelectedRepos(new Set());
+        setSelectAll(false);
+        fetchRepositories();
+        fetchProjects();
+      } else {
+        toast.error(data.error || 'Failed to create project');
+      }
+    } catch (error: any) {
+      console.error('Create project error:', error);
+      toast.error('Failed to create project');
+    }
+  };
+
+  const getProjectName = (projectId: string | null) => {
+    if (!projectId) return null;
+    const project = projects.find(p => p.id === projectId);
+    return project?.name || null;
   };
 
   if (repositories?.length === 0) {
@@ -551,15 +670,44 @@ export default function RepositoryList({
           {selectedRepos.size > 0 && (
             <>
               <span className="text-sm text-slate-400">({selectedRepos.size} selected)</span>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleGroupSelected}
-                className="border-blue-600/50 text-blue-300 hover:bg-blue-600/10 h-8"
-              >
-                <FolderPlus className="h-3 w-3 mr-1" />
-                Group
-              </Button>
+              <Select value={selectedProjectId ?? ''} onValueChange={(value) => setSelectedProjectId(value === 'none' ? null : value)}>
+                <SelectTrigger className="w-[180px] h-8 border-blue-600/50 text-blue-300 hover:bg-blue-600/10">
+                  <SelectValue placeholder="Move to group..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">
+                    <div className="flex items-center gap-2">
+                      <FolderOpen className="h-3 w-3" />
+                      No Group
+                    </div>
+                  </SelectItem>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      <div className="flex items-center gap-2">
+                        <FolderOpen className="h-3 w-3" />
+                        {project.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="create-new">
+                    <div className="flex items-center gap-2">
+                      <FolderPlus className="h-3 w-3" />
+                      Create New Group...
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              {selectedProjectId && selectedProjectId !== 'create-new' && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleMoveToProject(selectedProjectId)}
+                  className="border-blue-600/50 text-blue-300 hover:bg-blue-600/10 h-8"
+                >
+                  <Check className="h-3 w-3 mr-1" />
+                  Move
+                </Button>
+              )}
               <Button
                 size="sm"
                 variant="outline"
@@ -639,6 +787,12 @@ export default function RepositoryList({
                     {repo?.isFeatured && (
                       <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/50">
                         Featured
+                      </Badge>
+                    )}
+                    {repo.projectId && getProjectName(repo.projectId) && (
+                      <Badge variant="outline" className="border-blue-500/50 text-blue-300 bg-blue-500/5">
+                        <FolderOpen className="h-2 w-2 mr-1" />
+                        {getProjectName(repo.projectId)}
                       </Badge>
                     )}
                   </div>
@@ -792,6 +946,48 @@ export default function RepositoryList({
           );
         })}
       </div>
+
+      {/* Create Project Dialog */}
+      <Dialog open={isCreateProjectDialogOpen} onOpenChange={setIsCreateProjectDialogOpen}>
+        <DialogContent className="bg-slate-800 border-slate-700">
+          <DialogHeader>
+            <DialogTitle className="text-white">Create New Group</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Create a new project group to organize your selected repositories.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="project-name" className="text-slate-300">Group Name</Label>
+              <Input
+                id="project-name"
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                placeholder="e.g., Web Applications"
+                className="bg-slate-900 border-slate-700 text-white"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsCreateProjectDialogOpen(false);
+                setNewProjectName('');
+              }}
+              className="border-slate-600 text-slate-300 hover:bg-slate-700"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateProject}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              Create Group
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
