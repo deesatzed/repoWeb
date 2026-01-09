@@ -23,16 +23,13 @@ primary_region = 'iad'
 
 [env]
   NEXT_OUTPUT_MODE = "standalone"
-  DATABASE_URL = "file:/data/sqlite.db"
   # PORT = "3000" # set in Dockerfile
 
 [mounts]
   source = "sqlite_data"
-  destination = "/data"
+  destination = "/app/data"
 
 # The following secrets must be set using `fly secrets set`:
 # NEXTAUTH_SECRET
 # ENCRYPTION_KEY
 # OPENROUTER_API_KEY
-# GITHUB_CLIENT_ID
-# GITHUB_CLIENT_SECRET

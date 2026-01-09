@@ -1,8 +1,25 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/db';
-import { toPublicRepository } from '@/lib/public-dto';
+import path from 'node:path';
+import fs from 'node:fs/promises';
+import { db } from '@/lib/storage';
+
+const SINGLE_USER_ID = 'single-user';
+
+const PORTFOLIO_ROOT = process.env.PORTFOLIO_DATA_DIR
+  ? path.resolve(process.env.PORTFOLIO_DATA_DIR)
+  : path.join(process.cwd(), 'data', 'portfolio');
+
+async function loadPortfolioJson(username: string) {
+  try {
+    const filePath = path.join(PORTFOLIO_ROOT, username, 'portfolio.json');
+    const raw = await fs.readFile(filePath, 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(
   request: Request,
@@ -18,99 +35,76 @@ export async function GET(
       );
     }
 
-    // Find user by GitHub username
-    const connection = await prisma.gitHubConnection.findFirst({
-      where: { githubUsername: username },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            image: true,
-          },
-        },
-        repositories: {
-          where: { isExcluded: false },
-          include: {
-            aiAnalysis: true,
-          },
-          orderBy: [
-            { isFeatured: 'desc' },
-            { sortOrder: 'asc' },
-            { stargazersCount: 'desc' },
-          ],
-        },
-      },
-    });
+    // Try loading from static JSON file first
+    const jsonPortfolio = await loadPortfolioJson(username);
+    if (jsonPortfolio) {
+      const repositories = jsonPortfolio.repositories ?? [];
+      const projects = jsonPortfolio.projects ?? [];
+      return NextResponse.json({
+        ...jsonPortfolio,
+        repositories,
+        projects,
+        ungroupedRepositories: jsonPortfolio.ungroupedRepositories ?? repositories,
+      });
+    }
 
-    if (!connection) {
+    // Find user by GitHub username from JSON storage
+    const connection = await db.getGitHubConnection(SINGLE_USER_ID);
+
+    if (!connection || connection.githubUsername !== username) {
       return NextResponse.json(
         { error: 'Portfolio not found' },
         { status: 404 }
       );
     }
 
+    // Get repositories
+    const allRepositories = await db.getRepositories(SINGLE_USER_ID);
+    const repositories = allRepositories
+      .filter(r => !r.isExcluded)
+      .sort((a, b) => {
+        if (a.isFeatured !== b.isFeatured) return a.isFeatured ? -1 : 1;
+        return (b.stargazersCount || 0) - (a.stargazersCount || 0);
+      });
+
     // Get portfolio settings
-    const rawSettings = await prisma.portfolioSettings.findUnique({
-      where: { userId: connection.userId },
-    });
+    const settings = await db.getSettings(SINGLE_USER_ID);
 
-    const settings = rawSettings ? {
-      ...rawSettings,
-      featuredSection: rawSettings.featuredSection ? JSON.parse(rawSettings.featuredSection) : null,
-    } : null;
+    // Get projects
+    const allProjects = await db.getProjects(SINGLE_USER_ID);
+    const projects = allProjects.filter(p => p.isVisible);
 
-    // Get projects with their analyses
-    const projects = await prisma.project.findMany({
-      where: {
-        userId: connection.userId,
-        isVisible: true,
-      },
-      include: {
-        repositories: {
-          where: { isExcluded: false },
-          include: {
-            aiAnalysis: true,
-          },
-        },
-        aiAnalysis: true,
-      },
-      orderBy: { displayOrder: 'asc' },
-    });
-
-    const repositories = connection?.repositories?.map((repo: any) =>
-      toPublicRepository(repo, settings)
-    ) ?? [];
+    // Map repositories to public format
+    const publicRepos = repositories.map(repo => ({
+      id: repo.id,
+      name: repo.name,
+      fullName: repo.fullName,
+      description: repo.description,
+      language: repo.language,
+      stargazersCount: repo.stargazersCount,
+      forksCount: repo.forksCount,
+      topics: repo.topics,
+      htmlUrl: repo.htmlUrl,
+      isPrivate: repo.isPrivate,
+      isFork: repo.isFork,
+      isFeatured: repo.isFeatured,
+      projectId: repo.projectId,
+      aiAnalysis: repo.aiAnalysis,
+    }));
 
     // Separate ungrouped repositories (not part of any project)
-    const ungroupedRepos = repositories.filter(
-      (repo: any) => !repo.projectId
-    );
+    const ungroupedRepos = publicRepos.filter(repo => !repo.projectId);
 
-    const parseJsonArray = (val: string | string[] | null | undefined) => {
-      if (!val) return [];
-      if (Array.isArray(val)) return val;
-      try {
-        return JSON.parse(val || '[]');
-      } catch {
-        return [];
-      }
-    };
+    // Map projects with their repositories
+    const projectsWithRepos = projects.map(project => ({
+      ...project,
+      repositories: publicRepos.filter(r => r.projectId === project.id),
+    }));
 
     return NextResponse.json({
-      user: connection.user,
+      user: { id: SINGLE_USER_ID, name: settings?.displayName || connection.githubUsername },
       githubUsername: connection.githubUsername,
-      projects: projects.map((p: any) => ({
-        ...p,
-        repositories: p.repositories.map((r: any) =>
-          toPublicRepository(r, settings)
-        ),
-        aiAnalysis: p.aiAnalysis ? {
-          ...p.aiAnalysis,
-          technicalSkills: parseJsonArray(p.aiAnalysis.technicalSkills),
-          techStack: parseJsonArray(p.aiAnalysis.techStack),
-        } : null,
-      })),
+      projects: projectsWithRepos,
       repositories: ungroupedRepos,
       ungroupedRepositories: ungroupedRepos,
       settings,

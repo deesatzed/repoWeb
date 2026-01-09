@@ -1,28 +1,23 @@
 import { z } from 'zod';
 
 export const RepositoryAnalysisSchema = z.object({
-  complexityScore: z.number().min(0).max(100),
-  codeQualityScore: z.number().min(0).max(100),
   projectType: z.string().min(1),
+  summary: z.string().min(1),
   techStack: z.array(z.string()).default([]),
   keyFeatures: z.array(z.string()).default([]),
-  strengths: z.array(z.string()).default([]),
-  architecturePatterns: z.array(z.string()).default([]),
-  summary: z.string().min(1),
-  employerHighlights: z.string().min(1),
   skillsDemonstrated: z.array(z.string()).default([]),
-  linesOfCode: z.number().int().nonnegative().nullable().optional(),
-  fileCount: z.number().int().nonnegative().nullable().optional(),
+  keyResults: z.array(z.string()).default([]),
+  novelApproaches: z.string().optional(),
+  architecturePatterns: z.array(z.string()).default([]),
   hasTests: z.boolean(),
   hasDocumentation: z.boolean(),
   hasCiCd: z.boolean(),
   contributionPattern: z.enum(['Solo Project', 'Team Collaboration', 'Open Source']),
-  citations: z.array(z.object({
-    claim: z.string(),
-    filePath: z.string(),
-    lineNumber: z.number().int().nonnegative(),
-    codeSnippet: z.string().max(500),
-  })).default([]),
+  // Legacy fields (optional for backward compatibility)
+  strengths: z.array(z.string()).default([]).optional(),
+  employerHighlights: z.string().optional(),
+  complexityScore: z.number().optional(),
+  codeQualityScore: z.number().optional(),
 });
 
 export type RepositoryAnalysis = z.infer<typeof RepositoryAnalysisSchema>;

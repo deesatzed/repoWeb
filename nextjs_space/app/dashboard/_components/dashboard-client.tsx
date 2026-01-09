@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -13,7 +12,6 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { 
   Github, 
-  LogOut, 
   RefreshCw, 
   Sparkles, 
   ExternalLink,
@@ -37,6 +35,8 @@ import RepositoryList from '@/app/dashboard/_components/repository-list';
 import { PortfolioCuration } from '@/app/dashboard/_components/portfolio-curation';
 import { PortfolioChecklist } from '@/app/dashboard/_components/portfolio-checklist';
 import EngineeringDNA from '@/components/engineering-dna';
+import { WorkflowStepper } from '@/app/dashboard/_components/workflow-stepper';
+import { WorkflowStatusIndicator } from '@/app/dashboard/_components/workflow-status';
 
 interface GitHubConnection {
   connected: boolean;
@@ -56,7 +56,6 @@ async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, ti
 }
 
 export default function DashboardClient() {
-  const { data: session } = useSession() || {};
   const router = useRouter();
   const [githubToken, setGithubToken] = useState('');
   const [connection, setConnection] = useState<GitHubConnection | null>(null);
@@ -74,24 +73,37 @@ export default function DashboardClient() {
   const [syncSummary, setSyncSummary] = useState<{ created: number; updated: number; skipped: number } | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [workflowState, setWorkflowState] = useState<string>('INITIAL');
 
   useEffect(() => {
     fetchConnection();
     fetchStats();
     fetchSettings();
     fetchHighlightRepos();
+    fetchWorkflowState();
 
     // Listen for portfolio-reset event to refresh connection state
     const handleReset = () => {
       console.log('Portfolio reset detected, refreshing connection...');
       fetchConnection();
       fetchStats();
+      fetchWorkflowState();
       setSyncSummary(null);
       setSyncError(null);
     };
 
+    const handlePortfolioUpdate = () => {
+      fetchStats();
+      fetchWorkflowState();
+      fetchHighlightRepos();
+    };
+
     window.addEventListener('portfolio-reset', handleReset);
-    return () => window.removeEventListener('portfolio-reset', handleReset);
+    window.addEventListener('portfolio-updated', handlePortfolioUpdate);
+    return () => {
+      window.removeEventListener('portfolio-reset', handleReset);
+      window.removeEventListener('portfolio-updated', handlePortfolioUpdate);
+    };
   }, []);
 
   const fetchStats = async () => {
@@ -147,6 +159,18 @@ export default function DashboardClient() {
     }
   };
 
+  const fetchWorkflowState = async () => {
+    try {
+      const response = await fetchWithTimeout(`/api/workflow/status?t=${Date.now()}`);
+      const data = await response.json();
+      if (data?.currentState) {
+        setWorkflowState(data.currentState);
+      }
+    } catch (error) {
+      console.error('Error fetching workflow state:', error);
+    }
+  };
+
   const refreshData = async () => {
     setRefreshing(true);
     try {
@@ -154,7 +178,8 @@ export default function DashboardClient() {
         fetchConnection(),
         fetchStats(),
         fetchSettings(),
-        fetchHighlightRepos()
+        fetchHighlightRepos(),
+        fetchWorkflowState()
       ]);
       // Short delay to ensure DB consistency before UI remounts
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -174,8 +199,9 @@ export default function DashboardClient() {
       setActiveTab('curate');
     } else if (action === 'analyze') {
       setActiveTab('repositories');
-      // Do NOT auto-trigger analysis; user must start manually after curation
-      setTriggerAnalyze(false);
+      setTriggerAnalyze(true);
+    } else if (action === 'view') {
+      setPreviewMode(true);
     }
   };
 
@@ -213,9 +239,11 @@ export default function DashboardClient() {
     setSyncError(null);
     console.log('Starting sync...');
     
-    const syncPromise = fetchWithTimeout('/api/github/sync', {
-      method: 'POST',
-    }).then(async (response) => {
+    const syncPromise = fetchWithTimeout(
+      '/api/github/sync',
+      { method: 'POST' },
+      120000
+    ).then(async (response) => {
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data?.error || 'Failed to sync repositories');
@@ -240,8 +268,14 @@ export default function DashboardClient() {
       error: (err) => {
         console.error('Sync failed:', err);
         setSyncSummary(null);
-        setSyncError(err.message || 'Failed to sync repositories');
-        return err.message || 'Failed to sync repositories';
+        const isAbort =
+          err?.name === 'AbortError' ||
+          (typeof err?.message === 'string' && err.message.includes('aborted'));
+        const message = isAbort
+          ? 'Sync timed out. Try again or check GitHub rate limits.'
+          : err.message || 'Failed to sync repositories';
+        setSyncError(message);
+        return message;
       },
       finally: () => {
         setSyncing(false);
@@ -250,9 +284,6 @@ export default function DashboardClient() {
     });
   };
 
-  const handleSignOut = () => {
-    signOut({ callbackUrl: '/' });
-  };
 
   const handleCopyUrl = () => {
     if (!connection?.githubUsername) return;
@@ -275,6 +306,13 @@ export default function DashboardClient() {
     return { label: 'Organizing', tone: 'green' };
   })();
 
+  const repoCount = stats?.repoCount ?? 0;
+  const excludedCount = stats?.excludedCount ?? 0;
+  const analyzedCount = stats?.analyzedCount ?? 0;
+  const projectCount = stats?.projectCount ?? 0;
+  const includedCount = Math.max(repoCount - excludedCount, 0);
+  const remainingAnalysis = Math.max(includedCount - analyzedCount, 0);
+
   const toneMap: Record<string, string> = {
     slate: 'border-slate-600 text-slate-200 bg-slate-800/70',
     orange: 'border-amber-500/50 text-amber-300 bg-amber-500/10',
@@ -283,14 +321,14 @@ export default function DashboardClient() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-slate-900 to-cyan-900">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800">
       {/* Header */}
       <header className="bg-slate-900/50 backdrop-blur-lg border-b border-slate-800">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2">
-              <Github className="w-8 h-8 text-purple-400" />
-              <span className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent">
+              <Github className="w-8 h-8 text-blue-500" />
+              <span className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">
                 DevShowcase
               </span>
             </Link>
@@ -323,14 +361,6 @@ export default function DashboardClient() {
                   </Button>
                 </Link>
               )}
-              <Button 
-                variant="ghost" 
-                onClick={handleSignOut}
-                className="text-slate-200 hover:text-white"
-              >
-                <LogOut className="w-4 h-4 mr-2" />
-                Sign Out
-              </Button>
             </div>
           </div>
         </div>
@@ -341,7 +371,7 @@ export default function DashboardClient() {
         {refreshing && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center pointer-events-none">
             <div className="bg-slate-800 border border-slate-700 p-6 rounded-xl shadow-2xl flex flex-col items-center gap-4 animate-in fade-in zoom-in-95 duration-200">
-              <div className="w-12 h-12 rounded-full border-4 border-purple-500/30 border-t-purple-500 animate-spin" />
+              <div className="w-12 h-12 rounded-full border-4 border-blue-600/30 border-t-blue-600 animate-spin" />
               <div className="text-center">
                 <p className="text-white font-bold">Syncing Data...</p>
                 <p className="text-slate-400 text-xs mt-1">Fetching latest from GitHub & AI</p>
@@ -354,7 +384,7 @@ export default function DashboardClient() {
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
               <h1 className="text-4xl font-bold text-white">Technical Command Center</h1>
-              <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/20 text-[10px] uppercase tracking-tighter">V2.0 Workflows</Badge>
+              <Badge variant="outline" className="bg-blue-600/10 text-blue-400 border-blue-600/20 text-[10px] uppercase tracking-tighter">V2.0 Workflows</Badge>
             </div>
             <p className="text-slate-400">Transform your raw code into a professional narrative for prospective employers.</p>
           </div>
@@ -375,7 +405,7 @@ export default function DashboardClient() {
                 <button 
                   onClick={handleSync} 
                   disabled={syncing}
-                  className="text-xs font-bold text-purple-400 hover:text-purple-300 transition-all flex items-center gap-1.5 disabled:opacity-50 group"
+                  className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-all flex items-center gap-1.5 disabled:opacity-50 group"
                 >
                   <RefreshCw className={cn("w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-500", syncing && "animate-spin")} />
                   {syncing ? 'Syncing...' : 'Sync'}
@@ -388,7 +418,7 @@ export default function DashboardClient() {
                 onClick={() => setPreviewMode(false)}
                 className={cn(
                   "px-3 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all",
-                  !previewMode ? "bg-purple-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300"
+                  !previewMode ? "bg-blue-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-300"
                 )}
               >
                 Workflow Hub
@@ -410,8 +440,8 @@ export default function DashboardClient() {
         {!connection?.connected ? (
           <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-8 max-w-2xl">
             <div className="flex items-start gap-4 mb-6">
-              <div className="w-12 h-12 rounded-lg bg-purple-500/10 flex items-center justify-center flex-shrink-0">
-                <Github className="w-6 h-6 text-purple-400" />
+              <div className="w-12 h-12 rounded-lg bg-blue-600/10 flex items-center justify-center flex-shrink-0">
+                <Github className="w-6 h-6 text-blue-500" />
               </div>
               <div>
                 <h2 className="text-2xl font-semibold text-white mb-2">Connect GitHub Account</h2>
@@ -423,7 +453,7 @@ export default function DashboardClient() {
                   href="https://github.com/settings/tokens/new?scopes=repo,user&description=DevShowcase"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-purple-400 hover:text-purple-300 mt-2 text-sm"
+                  className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-400 mt-2 text-sm"
                 >
                   Create token on GitHub
                   <ExternalLink className="w-3 h-3" />
@@ -448,7 +478,7 @@ export default function DashboardClient() {
               </div>
               <Button
                 type="submit"
-                className="bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600"
+                className="bg-blue-600 hover:bg-blue-700"
                 disabled={loading}
               >
                 {loading ? 'Connecting...' : 'Connect GitHub'}
@@ -459,7 +489,7 @@ export default function DashboardClient() {
           <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="bg-slate-900/80 border border-slate-800 p-8 rounded-3xl shadow-2xl backdrop-blur-md">
               <div className="flex flex-col md:flex-row gap-8 items-center mb-12 border-b border-slate-800 pb-12">
-                <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-purple-500 to-cyan-500 p-1 flex-shrink-0">
+                <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-blue-600 to-blue-400 p-1 flex-shrink-0">
                   <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center">
                     <UserCircle className="w-12 h-12 text-slate-400" />
                   </div>
@@ -490,7 +520,7 @@ export default function DashboardClient() {
                   <div className="bg-slate-800/60 border border-slate-700 rounded-2xl p-6">
                     <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
                       <div className="flex items-center gap-2">
-                        <Sparkles className="w-5 h-5 text-purple-400" />
+                        <Sparkles className="w-5 h-5 text-blue-500" />
                         <h3 className="text-lg font-semibold text-white">Employer Highlights</h3>
                       </div>
                       <p className="text-sm text-slate-400">Open these first — strongest evidence</p>
@@ -521,7 +551,7 @@ export default function DashboardClient() {
                               {repo.aiAnalysis.skillsDemonstrated.slice(0, 3).map((skill: string, skillIdx: number) => (
                                 <span
                                   key={skillIdx}
-                                  className="px-2 py-1 rounded-md bg-purple-500/10 border border-purple-500/20 text-xs text-purple-200"
+                                  className="px-2 py-1 rounded-md bg-blue-600/10 border border-blue-600/20 text-xs text-blue-200"
                                 >
                                   {skill}
                                 </span>
@@ -546,7 +576,7 @@ export default function DashboardClient() {
 
                 <div>
                   <h3 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                    <Sparkles className="w-6 h-6 text-purple-400" />
+                    <Sparkles className="w-6 h-6 text-blue-500" />
                     Featured Work
                   </h3>
                   <RepositoryList 
@@ -643,49 +673,53 @@ export default function DashboardClient() {
                       Sync Now
                     </Button>
                   </div>
-                ) : stats.excludedCount === 0 ? (
-                  <div className="bg-purple-500/10 border border-purple-500/30 p-4 rounded-xl flex items-center justify-between gap-4">
+                ) : excludedCount === 0 || includedCount === 0 ? (
+                  <div className="bg-blue-600/10 border border-blue-600/30 p-4 rounded-xl flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center">
-                        <EyeOff className="w-5 h-5 text-purple-400" />
+                      <div className="w-10 h-10 rounded-full bg-blue-600/20 flex items-center justify-center">
+                        <EyeOff className="w-5 h-5 text-blue-500" />
                       </div>
                       <div>
                         <h4 className="font-bold text-white text-sm">Step 2: Curate Your Work</h4>
-                        <p className="text-xs text-slate-400">You have {stats.repoCount} repos. Hide the junk to show your best work.</p>
+                        <p className="text-xs text-slate-400">You have {repoCount} repos. Hide the junk to show your best work.</p>
                       </div>
                     </div>
-                    <Button onClick={() => setActiveTab('curate')} className="bg-purple-600 hover:bg-purple-700 text-xs h-8">
+                    <Button onClick={() => setActiveTab('curate')} className="bg-blue-600 hover:bg-blue-700 text-xs h-8">
                       Select & Filter
                     </Button>
                   </div>
-                ) : stats.projectCount === 0 ? (
-                  <div className="bg-cyan-500/10 border border-cyan-500/30 p-4 rounded-xl flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-cyan-500/20 flex items-center justify-center">
-                        <FolderOpen className="w-5 h-5 text-cyan-400" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-white text-sm">Step 3: Organize Groups</h4>
-                        <p className="text-xs text-slate-400">Use Magic Auto-Curate to group related repos into projects.</p>
-                      </div>
-                    </div>
-                    <Button onClick={() => setActiveTab('curate')} className="bg-cyan-600 hover:bg-cyan-700 text-xs h-8">
-                      Smart Grouping
-                    </Button>
-                  </div>
-                ) : stats.analyzedCount < (stats.repoCount - stats.excludedCount) ? (
+                ) : remainingAnalysis > 0 ? (
                   <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-xl flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center">
                         <Sparkles className="w-5 h-5 text-amber-400" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-white text-sm">Step 5: Deep AI Analysis</h4>
-                        <p className="text-xs text-slate-400">Generate high-signal career insights for your selected work.</p>
+                        <h4 className="font-bold text-white text-sm">Step 3: Deep AI Analysis</h4>
+                        <p className="text-xs text-slate-400">Analyze all included repos to unlock AI grouping suggestions.</p>
                       </div>
                     </div>
-                    <Button onClick={() => handleOnboardingAction('analyze')} className="bg-amber-600 hover:bg-amber-700 text-xs h-8">
-                      Start Analysis
+                    <Button
+                      onClick={() => handleOnboardingAction('analyze')}
+                      disabled={isAnalyzing}
+                      className="bg-amber-600 hover:bg-amber-700 text-xs h-8"
+                    >
+                      {isAnalyzing ? 'Analyzing...' : 'Start Analysis'}
+                    </Button>
+                  </div>
+                ) : projectCount === 0 ? (
+                  <div className="bg-cyan-500/10 border border-cyan-500/30 p-4 rounded-xl flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-cyan-500/20 flex items-center justify-center">
+                        <FolderOpen className="w-5 h-5 text-cyan-400" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-white text-sm">Step 4: AI Grouping</h4>
+                        <p className="text-xs text-slate-400">Use Magic Auto-Curate to group related repos into projects.</p>
+                      </div>
+                    </div>
+                    <Button onClick={() => setActiveTab('curate')} className="bg-cyan-600 hover:bg-cyan-700 text-xs h-8">
+                      Smart Grouping
                     </Button>
                   </div>
                 ) : (
@@ -695,7 +729,7 @@ export default function DashboardClient() {
                         <Share2 className="w-5 h-5 text-green-400" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-white text-sm">All Set! Portfolio Live</h4>
+                        <h4 className="font-bold text-white text-sm">Step 5: Share Portfolio</h4>
                         <p className="text-xs text-slate-400">Your professional showcase is ready. Share your URL with employers.</p>
                       </div>
                     </div>
@@ -707,12 +741,18 @@ export default function DashboardClient() {
               </div>
             )}
 
+            {/* Workflow Status and Stepper */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              <WorkflowStatusIndicator />
+              <WorkflowStepper currentState={workflowState} />
+            </div>
+
             {/* Portfolio Overview Stats */}
             {stats && (
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <Card className="bg-slate-800/40 border-slate-700/50 p-4 relative overflow-hidden group hover:border-purple-500/30 transition-all">
-                    <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <Card className="bg-slate-800/40 border-slate-700/50 p-4 relative overflow-hidden group hover:border-blue-600/30 transition-all">
+                    <div className="absolute inset-0 bg-gradient-to-br from-blue-600/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                     <p className="text-xs text-slate-500 uppercase tracking-wider font-bold">Total Work</p>
                     <div className="flex items-end gap-2 mt-1">
                       <span className="text-3xl font-bold text-white">{stats.repoCount}</span>
@@ -723,7 +763,7 @@ export default function DashboardClient() {
                     <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                     <p className="text-xs text-slate-500 uppercase tracking-wider font-bold">Visibility</p>
                     <div className="flex items-end gap-2 mt-1">
-                      <span className="text-3xl font-bold text-purple-400">{stats.repoCount - stats.excludedCount}</span>
+                      <span className="text-3xl font-bold text-blue-400">{stats.repoCount - stats.excludedCount}</span>
                       <span className="text-xs text-slate-400 mb-1">Selected</span>
                     </div>
                   </Card>
@@ -749,8 +789,8 @@ export default function DashboardClient() {
                 {stats.topLanguages?.length > 0 && (
                   <Card className="bg-slate-900/60 border-slate-800 p-6">
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
-                        <Code2 className="w-5 h-5 text-purple-400" />
+                      <div className="w-10 h-10 rounded-xl bg-blue-600/10 flex items-center justify-center">
+                        <Code2 className="w-5 h-5 text-blue-500" />
                       </div>
                       <div>
                         <h3 className="font-bold text-white">Technical Language Impact</h3>
@@ -766,7 +806,7 @@ export default function DashboardClient() {
                           </div>
                           <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
                             <div 
-                              className="h-full bg-purple-500 rounded-full"
+                              className="h-full bg-blue-600 rounded-full"
                               style={{ width: `${(lang.bytes / stats.topLanguages[0].bytes) * 100}%` }}
                             />
                           </div>
@@ -804,7 +844,7 @@ export default function DashboardClient() {
                             (stats.projectCount > 0 ? 0.3 : 0) + 
                             (stats.isAnalyzed ? 0.3 : 0)
                           ))}
-                          className="text-purple-500 transition-all duration-1000 ease-in-out"
+                          className="text-blue-500 transition-all duration-1000 ease-in-out"
                           strokeLinecap="round"
                         />
                       </svg>
@@ -825,7 +865,7 @@ export default function DashboardClient() {
                       {!stats.hasRepos && <Badge variant="outline" className="text-[10px] text-red-400 border-red-900/50 bg-red-950/20">Sync Required</Badge>}
                       {stats.hasRepos && stats.excludedCount === 0 && <Badge variant="outline" className="text-[10px] text-amber-400 border-amber-900/50 bg-amber-950/20">Needs Curation</Badge>}
                       {stats.hasRepos && stats.projectCount === 0 && <Badge variant="outline" className="text-[10px] text-cyan-400 border-cyan-900/50 bg-cyan-950/20">Needs Grouping</Badge>}
-                      {stats.repoCount - stats.excludedCount > stats.analyzedCount && <Badge variant="outline" className="text-[10px] text-purple-400 border-purple-900/50 bg-purple-950/20">AI Needed</Badge>}
+                      {stats.repoCount - stats.excludedCount > stats.analyzedCount && <Badge variant="outline" className="text-[10px] text-blue-400 border-blue-900/50 bg-blue-950/20">AI Needed</Badge>}
                     </div>
                   </Card>
 
@@ -845,15 +885,15 @@ export default function DashboardClient() {
             )}
 
             {/* Portfolio URL Card - Compact */}
-            <Card className="bg-gradient-to-br from-purple-900/30 to-cyan-900/30 backdrop-blur-sm border-slate-800 p-4">
+            <Card className="bg-gradient-to-br from-slate-800/30 to-slate-800/30 backdrop-blur-sm border-slate-800 p-4">
               <div className="flex flex-col md:flex-row items-center gap-4">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center flex-shrink-0">
-                    <Briefcase className="w-5 h-5 text-purple-300" />
+                  <div className="w-10 h-10 rounded-lg bg-blue-600/20 flex items-center justify-center flex-shrink-0">
+                    <Briefcase className="w-5 h-5 text-blue-300" />
                   </div>
                   <div className="truncate">
                     <h3 className="font-semibold text-white text-sm">Public Portfolio Live</h3>
-                    <code className="text-purple-300 text-xs truncate block mt-0.5">
+                    <code className="text-blue-300 text-xs truncate block mt-0.5">
                       {typeof window !== 'undefined' ? `${window.location.origin}/portfolio/${connection?.githubUsername}` : ''}
                     </code>
                   </div>
@@ -863,7 +903,7 @@ export default function DashboardClient() {
                     <Copy className="w-3 h-3 mr-2" /> Copy
                   </Button>
                   <Link href={`/portfolio/${connection?.githubUsername}`} target="_blank">
-                    <Button size="sm" className="bg-purple-600 hover:bg-purple-700 h-8">
+                    <Button size="sm" className="bg-blue-600 hover:bg-blue-700 h-8">
                       <Eye className="w-3 h-3 mr-2" /> Preview
                     </Button>
                   </Link>
@@ -886,7 +926,7 @@ export default function DashboardClient() {
                   <FolderOpen className="w-4 h-4 mr-2" />
                   Select & Organize
                   {stats && stats.excludedCount > 0 && (
-                    <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-purple-700/60 text-purple-50">
+                    <span className="ml-2 text-[10px] px-2 py-0.5 rounded-full bg-blue-700/60 text-blue-50">
                       {stats.excludedCount} hidden
                     </span>
                   )}
@@ -900,7 +940,7 @@ export default function DashboardClient() {
               <TabsContent value="repositories" className="mt-6">
                 {refreshing ? (
                   <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-12 flex flex-col items-center justify-center gap-4">
-                    <RefreshCw className="w-8 h-8 text-purple-400 animate-spin" />
+                    <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />
                     <p className="text-slate-400 font-medium italic">Refreshing repositories...</p>
                   </Card>
                 ) : (
@@ -921,7 +961,7 @@ export default function DashboardClient() {
               <TabsContent value="curate" className="mt-6">
                 {refreshing ? (
                   <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-12 flex flex-col items-center justify-center gap-4">
-                    <RefreshCw className="w-8 h-8 text-purple-400 animate-spin" />
+                    <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />
                     <p className="text-slate-400 font-medium italic">Refreshing curation data...</p>
                   </Card>
                 ) : (

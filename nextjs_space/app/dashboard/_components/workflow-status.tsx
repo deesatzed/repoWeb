@@ -41,8 +41,25 @@ export function WorkflowStatusIndicator() {
     return () => clearInterval(interval);
   }, []);
 
-  if (loading || !status) {
-    return null;
+  if (loading) {
+    return (
+      <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+        <div className="flex items-center gap-2 text-slate-300">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span className="text-sm">Loading workflow status...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!status) {
+    return (
+      <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+        <div className="text-sm text-slate-400">
+          Workflow status unavailable. Try refreshing.
+        </div>
+      </div>
+    );
   }
 
   const getStateDisplay = (state: string) => {
@@ -149,7 +166,7 @@ export function WorkflowStatusIndicator() {
         </p>
       )}
 
-      {status.blockedActions.includes('group') &&
+      {status.blockedActions.includes('generateGroupingSuggestions') &&
         !status.analysis.isComplete && (
           <div className="flex items-start gap-2 p-3 bg-yellow-900/20 border border-yellow-700/30 rounded">
             <AlertCircle className="h-4 w-4 text-yellow-400 mt-0.5 flex-shrink-0" />

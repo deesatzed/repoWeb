@@ -1,23 +1,17 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import prisma from '@/lib/db';
+import { db } from '@/lib/storage';
 import { redactForLLM } from '@/lib/redaction';
 import { RepositoryAnalysisSchema } from '@/lib/analysis-schemas';
 import { analyzeJSON } from '@/lib/llm';
 import { GitHubService } from '@/lib/github-api';
 import { decrypt } from '@/lib/encryption';
-import { getCurrentWorkflowState, transitionWorkflowState } from '@/lib/workflow-state';
+
+const SINGLE_USER_ID = 'single-user';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
-    const session = await auth();
-
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const body = await request.json();
     const { repositoryId } = body ?? {};
 
@@ -28,15 +22,9 @@ export async function POST(request: Request) {
       );
     }
 
-    // Fetch repository with connection check
-    const repository = await prisma.repository.findFirst({
-      where: {
-        id: repositoryId,
-        githubConnection: {
-          userId: session.user.id,
-        },
-      },
-    });
+    // Fetch repository
+    const repositories = await db.getRepositories(SINGLE_USER_ID);
+    const repository = repositories.find(r => r.id === repositoryId);
 
     if (!repository) {
       return NextResponse.json(
@@ -45,9 +33,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const settings = await prisma.portfolioSettings.findUnique({
-      where: { userId: session.user.id },
-    });
+    const settings = await db.getSettings(SINGLE_USER_ID);
 
     const shouldOmitPrivateReadme = Boolean(
       repository.isPrivate && settings?.hidePrivateRepoNames
@@ -65,14 +51,29 @@ export async function POST(request: Request) {
     // Fetch repository files for evidence-backed analysis
     let fileContents: Array<{ path: string; content: string }> = [];
     try {
-      const gitHubConnection = await prisma.gitHubConnection.findFirst({
-        where: { userId: session.user.id },
-      });
+      const gitHubConnection = await db.getGitHubConnection(SINGLE_USER_ID);
 
       if (gitHubConnection?.githubToken) {
         const githubService = new GitHubService(gitHubConnection.githubToken);
-        const [owner, repoName] = repository.name.split('/');
-        fileContents = await githubService.getRepositoryFiles(owner, repoName, '', 8);
+        const repoSlug = repository.fullName || repository.name;
+        let owner = '';
+        let repoName = '';
+
+        if (repoSlug.includes('/')) {
+          [owner, repoName] = repoSlug.split('/');
+        } else if (gitHubConnection.githubUsername) {
+          owner = gitHubConnection.githubUsername;
+          repoName = repoSlug;
+        }
+
+        if (owner && repoName) {
+          fileContents = await githubService.getRepositoryFiles(owner, repoName, '', 8);
+        } else {
+          console.warn('Skipping file fetch: missing owner/repo', {
+            repositoryId: repository.id,
+            repoSlug,
+          });
+        }
       }
     } catch (err) {
       console.warn('Failed to fetch repository files for analysis:', err);
@@ -99,65 +100,56 @@ export async function POST(request: Request) {
       })),
     };
 
-    const prompt = `You are a cynical, high-bar CTO reviewing a candidate's code repository to determine if they are worth interviewing.
+    const prompt = `You are a Technical Portfolio Writer creating accomplishment-focused descriptions for a developer's portfolio.
 
     Repository Context:
     - Name: ${context.name}
     - Description: ${context.description}
-    - Language: ${context.language}
+    - Primary Language: ${context.language}
     - Topics: ${context.topics.join(', ')}
-    - Stars/Forks: ${context.stars} / ${context.forks}
+    - Community Interest: ${context.stars} stars, ${context.forks} forks
     - README Preview: ${context.readme.substring(0, 1500)}
 
     ${context.files.length > 0 ? `
-    Sample Files for Evidence-Based Analysis:
+    Code Samples:
     ${context.files.map(f => `
     File: ${f.path}
-    Content:
+    \`\`\`
     ${f.content}
+    \`\`\`
     `).join('\n---\n')}
     ` : ''}
 
-    TASK: Deep technical analysis for a "Senior Engineer" or "Lead" role.
+    TASK: Write an accomplishment-focused analysis. NO RATINGS OR SCORES. Focus on WHAT WAS BUILT and SKILLS USED.
 
-    CRITICAL INSTRUCTIONS:
-    1. EVIDENCE-BASED ONLY: Do not say "excellent code quality" unless you cite specific patterns (e.g., "Dependency injection used for service layers", "Comprehensive unit testing with Jest").
-    2. EMPLOYER FOCUS: What ROI does this person bring? Do they solve hard problems (scalability, security, performance) or just build CRUD apps?
-    3. DETECT JUNK/TUTORIALS: If this is a tutorial-style repo, be blunt. If it's a fork with zero changes, flag it.
-    4. PERSONA: You are looking for system thinking, architectural awareness, and production readiness.
-    5. CITATIONS: For each key claim (strengths, features, patterns), provide a citation with the file path, line number (approximate), and a short code snippet.
+    WRITING STYLE:
+    1. ACCOMPLISHMENT-FOCUSED: Describe what the project DOES and what was BUILT
+    2. TECH-FORWARD: Emphasize specific technologies, frameworks, and tools used
+    3. SKILLS-BASED: Highlight concrete skills demonstrated (not vague praise)
+    4. NO FLUFF: Be specific and factual, not generic or promotional
+    5. NO NEGATIVES: Never mention limitations or what's missing
 
-    Analyze specifically for:
-    - ARCHITECTURAL DEPTH: MVC, Microservices, Event-driven, DDD, etc.
-    - OPERATIONAL EXCELLENCE: CI/CD, Monitoring, Error handling, Logging.
-    - DOMAIN EXPERTISE: Does this show deep knowledge of ${context.language} or specific industries (e.g. Fintech, Healthcare)?
+    WHAT TO EXTRACT:
+    - What does this application/tool DO? (one clear sentence)
+    - What specific technologies power it?
+    - What technical skills does building this demonstrate?
+    - Any novel approaches or interesting implementation details?
+    - Any measurable results, metrics, or outcomes (if evident from README or code)
 
-    Respond with raw JSON only in this exact structure:
+    Respond with raw JSON only:
     {
-      "complexityScore": <number 0-100, be strict, tutorial=10, production=90>,
-      "codeQualityScore": <number 0-100>,
-      "projectType": "<e.g. 'Production-Grade System', 'Technical Proof of Concept', 'Open Source Library'>",
-      "techStack": ["specific libs/frameworks"],
-      "keyFeatures": ["feature 1 (technical detail)", "feature 2"],
-      "strengths": ["architectural strength 1", "operational strength 2"],
-      "architecturePatterns": ["pattern 1", "pattern 2"],
-      "summary": "<2 sentence technical value proposition for a hiring manager>",
-      "employerHighlights": "<A 'Killer Feature' or specific reason this code proves senior-level skill.>",
-      "skillsDemonstrated": ["skill 1", "skill 2"],
-      "linesOfCode": <estimated>,
-      "fileCount": <estimated>,
+      "projectType": "<e.g. 'CLI Tool', 'Web Application', 'ML Pipeline', 'API Service', 'Data Analysis'>",
+      "summary": "<1-2 sentences: What does this project DO? Be specific about its purpose and functionality.>",
+      "techStack": ["specific framework/library 1", "tool 2", "technology 3"],
+      "keyFeatures": ["concrete feature 1", "concrete feature 2"],
+      "skillsDemonstrated": ["specific skill 1", "specific skill 2", "specific skill 3"],
+      "keyResults": ["<measurable outcome, metric, or achievement if any - e.g. '95% accuracy on test set', 'Processes 10K requests/sec', 'Reduced build time by 40%'>"],
+      "novelApproaches": "<Any interesting or novel technical approaches used. If none obvious, describe the main technical approach.>",
+      "architecturePatterns": ["pattern 1 if any"],
       "hasTests": <boolean>,
       "hasDocumentation": <boolean>,
       "hasCiCd": <boolean>,
-      "contributionPattern": "<Solo Project|Team Collaboration|Open Source>",
-      "citations": [
-        {
-          "claim": "Specific claim about code quality or architecture",
-          "filePath": "path/to/file.ext",
-          "lineNumber": <number>,
-          "codeSnippet": "<short code excerpt (max 500 chars) supporting the claim>"
-        }
-      ]
+      "contributionPattern": "<Solo Project|Team Collaboration|Open Source>"
     }
 
     Respond with raw JSON only.`;
@@ -176,7 +168,7 @@ export async function POST(request: Request) {
           controller.enqueue(encoder.encode(`data: ${progressData}\n\n`));
 
           // 2. Call OpenRouter
-          const rawAnalysis = await analyzeJSON(prompt, 'You are a senior technical recruiter and engineering manager.');
+          const rawAnalysis = await analyzeJSON(prompt, 'You are a supportive portfolio advisor who highlights the positive aspects of code and helps developers present their best work to employers.');
 
           // Normalize contributionPattern to schema enum
           const normalizeContributionPattern = (val: any): 'Solo Project' | 'Team Collaboration' | 'Open Source' => {
@@ -200,95 +192,23 @@ export async function POST(request: Request) {
           const finalAnalysis = validated.data;
 
           // 4. Save to DB
-          await prisma.aIAnalysis.upsert({
-            where: { repositoryId: repository.id },
-            update: {
-              complexityScore: finalAnalysis.complexityScore,
-              codeQualityScore: finalAnalysis.codeQualityScore,
+          await db.updateRepository(repository.id, {
+            aiAnalysis: {
               projectType: finalAnalysis.projectType,
-              techStack: JSON.stringify(finalAnalysis.techStack ?? []) as any,
-              keyFeatures: JSON.stringify(finalAnalysis.keyFeatures ?? []) as any,
-              strengths: JSON.stringify(finalAnalysis.strengths ?? []) as any,
-              architecturePatterns: JSON.stringify(finalAnalysis.architecturePatterns ?? []) as any,
-              summary: finalAnalysis.summary,
-              employerHighlights: finalAnalysis.employerHighlights,
-              skillsDemonstrated: JSON.stringify(finalAnalysis.skillsDemonstrated ?? []) as any,
-              linesOfCode: finalAnalysis.linesOfCode ?? null,
-              fileCount: finalAnalysis.fileCount ?? null,
-              hasTests: finalAnalysis.hasTests,
-              hasDocumentation: finalAnalysis.hasDocumentation,
-              hasCiCd: finalAnalysis.hasCiCd,
+              summary: finalAnalysis.summary ?? '',
+              techStack: finalAnalysis.techStack ?? [],
+              keyFeatures: finalAnalysis.keyFeatures ?? [],
+              skillsDemonstrated: finalAnalysis.skillsDemonstrated ?? [],
+              keyResults: finalAnalysis.keyResults ?? [],
+              novelApproaches: finalAnalysis.novelApproaches ?? '',
+              architecturePatterns: finalAnalysis.architecturePatterns ?? [],
+              hasTests: finalAnalysis.hasTests ?? false,
+              hasDocumentation: finalAnalysis.hasDocumentation ?? false,
+              hasCiCd: finalAnalysis.hasCiCd ?? false,
               contributionPattern: finalAnalysis.contributionPattern,
-              citations: JSON.stringify(finalAnalysis.citations ?? []) as any,
-              updatedAt: new Date(),
             },
-            create: {
-              repositoryId: repository.id,
-              complexityScore: finalAnalysis.complexityScore,
-              codeQualityScore: finalAnalysis.codeQualityScore,
-              projectType: finalAnalysis.projectType,
-              techStack: JSON.stringify(finalAnalysis.techStack ?? []) as any,
-              keyFeatures: JSON.stringify(finalAnalysis.keyFeatures ?? []) as any,
-              strengths: JSON.stringify(finalAnalysis.strengths ?? []) as any,
-              architecturePatterns: JSON.stringify(finalAnalysis.architecturePatterns ?? []) as any,
-              summary: finalAnalysis.summary,
-              employerHighlights: finalAnalysis.employerHighlights,
-              skillsDemonstrated: JSON.stringify(finalAnalysis.skillsDemonstrated ?? []) as any,
-              linesOfCode: finalAnalysis.linesOfCode ?? null,
-              fileCount: finalAnalysis.fileCount ?? null,
-              hasTests: finalAnalysis.hasTests,
-              hasDocumentation: finalAnalysis.hasDocumentation,
-              hasCiCd: finalAnalysis.hasCiCd,
-              contributionPattern: finalAnalysis.contributionPattern,
-              citations: JSON.stringify(finalAnalysis.citations ?? []) as any,
-            },
+            lastAnalyzedAt: new Date().toISOString()
           });
-
-          // Update repository last analyzed time
-          await prisma.repository.update({
-            where: { id: repository.id },
-            data: { lastAnalyzedAt: new Date() },
-          });
-
-          // WORKFLOW STATE MANAGEMENT
-          const currentState = await getCurrentWorkflowState(session.user.id);
-
-          // Transition to ANALYZING if this is the first analysis from CURATED state
-          if (currentState === 'CURATED') {
-            await transitionWorkflowState(
-              session.user.id,
-              'ANALYZING',
-              `Started analyzing repository: ${repository.name}`
-            );
-          }
-
-          // Check if all included repos are now analyzed
-          if (currentState === 'ANALYZING' || currentState === 'CURATED') {
-            const [includedRepos, analyzedRepos] = await Promise.all([
-              prisma.repository.count({
-                where: {
-                  githubConnection: { userId: session.user.id },
-                  isExcluded: false,
-                },
-              }),
-              prisma.repository.count({
-                where: {
-                  githubConnection: { userId: session.user.id },
-                  isExcluded: false,
-                  aiAnalysis: { isNot: null },
-                },
-              }),
-            ]);
-
-            // If all included repos are analyzed, transition to ANALYZED
-            if (includedRepos > 0 && includedRepos === analyzedRepos) {
-              await transitionWorkflowState(
-                session.user.id,
-                'ANALYZED',
-                `All ${includedRepos} included repositories analyzed`
-              );
-            }
-          }
 
           // 5. Send "completed" status
           const finalData = JSON.stringify({

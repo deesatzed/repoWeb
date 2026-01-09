@@ -13,7 +13,7 @@ import {
   RotateCcw,
   AlertCircle,
   EyeOff,
-  Pencil
+  Share2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -45,14 +45,22 @@ export function PortfolioChecklist({
 }: PortfolioChecklistProps) {
   if (loading || !stats) return null;
 
+  const repoCount = stats.repoCount ?? 0;
+  const excludedCount = stats.excludedCount ?? 0;
+  const analyzedCount = stats.analyzedCount ?? 0;
+  const projectCount = stats.projectCount ?? 0;
+  const includedCount = Math.max(repoCount - excludedCount, 0);
+  const analysisComplete = includedCount > 0 && analyzedCount >= includedCount;
+  const analysisProgress = includedCount > 0 ? (analyzedCount / includedCount) * 100 : 0;
+
   const steps = [
     {
       id: 'sync',
-      title: '1. Connect & Sync',
-      description: 'Import your technical history from GitHub.',
-      status: stats.hasRepos ? 'completed' : 'pending',
+      title: '1. Sync Repositories',
+      description: 'Pull your repositories from GitHub.',
+      status: stats.hasRepos ? 'completed' : (isSyncing ? 'in_progress' : 'pending'),
       icon: LayoutGrid,
-      stats: `${stats.repoCount} repositories`,
+      stats: `${repoCount} repositories`,
       actionLabel: stats.hasRepos ? 'Sync Again' : 'Sync Now',
       actionIcon: stats.hasRepos ? RotateCcw : RefreshCw,
       onAction: () => onAction('sync'),
@@ -63,52 +71,58 @@ export function PortfolioChecklist({
       id: 'curate',
       title: '2. Select & Filter',
       description: 'Hide forks, boilerplate, or irrelevant exercises.',
-      status: stats.excludedCount > 0 ? 'completed' : (stats.hasRepos ? 'in_progress' : 'pending'),
+      status: excludedCount > 0 && includedCount > 0
+        ? 'completed'
+        : (stats.hasRepos ? 'in_progress' : 'pending'),
       icon: EyeOff,
-      stats: `${stats.repoCount - stats.excludedCount} selected`,
+      stats: `${includedCount} selected`,
       actionLabel: 'Filter Repos',
       actionIcon: ArrowRight,
       onAction: () => onAction('curate'),
       warning: null
     },
     {
-      id: 'group',
-      title: '3. Smart Grouping',
-      description: 'Use Magic Auto-Curate to group related repositories.',
-      status: stats.projectCount > 0 ? 'completed' : (stats.excludedCount > 0 ? 'in_progress' : 'pending'),
-      icon: FolderOpen,
-      stats: `${stats.projectCount} groups`,
-      actionLabel: 'Group Projects',
-      actionIcon: Sparkles,
-      onAction: () => onAction('curate'),
-      warning: null
-    },
-    {
-      id: 'refine',
-      title: '4. Refine Groups',
-      description: 'Add or remove members from project groups.',
-      status: stats.projectCount > 0 ? 'completed' : 'pending',
-      icon: Pencil,
-      stats: 'Marina-style efficiency',
-      actionLabel: 'Refine Groups',
-      actionIcon: ArrowRight,
-      onAction: () => onAction('curate'),
-      warning: null
-    },
-    {
       id: 'analyze',
-      title: '5. Deep AI Analysis',
-      description: 'Generate high-signal content for prospective employers.',
-      status: stats.isAnalyzed ? 'completed' : (isAnalyzing ? 'in_progress' : 'pending'),
+      title: '3. Deep AI Analysis',
+      description: 'Analyze all included repositories before AI grouping.',
+      status: stats.isAnalyzed ? 'completed' : (isAnalyzing || analyzedCount > 0 ? 'in_progress' : 'pending'),
       icon: Sparkles,
-      stats: `${stats.analyzedCount} analyzed`,
+      stats: `${analyzedCount} of ${includedCount} analyzed`,
       actionLabel: stats.isAnalyzed ? 'Update Analysis' : 'Start Deep Analysis',
       actionIcon: Sparkles,
       onAction: () => onAction('analyze'),
       isProcessing: isAnalyzing,
-      progress: stats.repoCount > 0 ? (stats.analyzedCount / (Math.max(1, stats.repoCount - stats.excludedCount))) * 100 : 0,
+      progress: analysisProgress,
       warning: null
-    }
+    },
+    {
+      id: 'group',
+      title: '4. AI Grouping',
+      description: 'Generate AI-suggested project groupings.',
+      status: projectCount > 0 ? 'completed' : 'pending',
+      icon: FolderOpen,
+      stats: `${projectCount} groups`,
+      actionLabel: 'Magic Auto-Curate',
+      actionIcon: Sparkles,
+      onAction: () => onAction('curate'),
+      warning: null
+    },
+    {
+      id: 'share',
+      title: '5. Share Portfolio',
+      description: 'Preview and share your employer-facing portfolio.',
+      status: analysisComplete && projectCount > 0
+        ? 'completed'
+        : projectCount > 0
+        ? 'in_progress'
+        : 'pending',
+      icon: Share2,
+      stats: analysisComplete && projectCount > 0 ? 'Ready to share' : 'Not ready',
+      actionLabel: 'Preview Portfolio',
+      actionIcon: ArrowRight,
+      onAction: () => onAction('view'),
+      warning: null
+    },
   ];
 
   const allCompleted = steps.every(s => s.status === 'completed');
@@ -150,7 +164,7 @@ export function PortfolioChecklist({
               step.status === 'completed' 
                 ? "bg-slate-800/30 border-green-900/30" 
                 : step.status === 'in_progress'
-                  ? "bg-purple-900/10 border-purple-500/30"
+                  ? "bg-blue-900/10 border-blue-500/30"
                   : "bg-slate-800/50 border-slate-700"
             )}
           >
@@ -159,7 +173,7 @@ export function PortfolioChecklist({
               {step.status === 'completed' ? (
                 <CheckCircle2 className="w-6 h-6 text-green-500" />
               ) : step.status === 'in_progress' ? (
-                <div className="w-6 h-6 rounded-full border-2 border-purple-500 border-t-transparent animate-spin" />
+                <div className="w-6 h-6 rounded-full border-2 border-blue-600 border-t-transparent animate-spin" />
               ) : (
                 <Circle className="w-6 h-6 text-slate-600" />
               )}
@@ -211,7 +225,7 @@ export function PortfolioChecklist({
                   "h-8",
                   step.status === 'completed' 
                     ? "text-slate-400 hover:text-white hover:bg-slate-800" 
-                    : "bg-purple-600 hover:bg-purple-700 text-white"
+                    : "bg-blue-600 hover:bg-blue-700 text-white"
                 )}
               >
                 <step.actionIcon className={cn(

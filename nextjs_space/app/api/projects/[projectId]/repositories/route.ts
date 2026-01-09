@@ -1,25 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import prisma from '@/lib/db';
+import { db } from '@/lib/storage';
 
-const serializeRepository = (repo: any) => {
-  if (!repo) return repo;
-  return {
-    ...repo,
-    githubId: repo.githubId ? repo.githubId.toString() : '0',
-  };
-};
+const SINGLE_USER_ID = 'single-user';
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const { repositoryId } = await req.json();
     const { projectId } = await params;
 
@@ -27,46 +15,23 @@ export async function POST(
       return NextResponse.json({ error: 'Repository ID is required' }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      include: { githubConnection: true },
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
     // Verify project ownership
-    const project = await prisma.project.findFirst({
-      where: {
-        id: projectId,
-        userId: user.id,
-      },
-    });
-
-    if (!project) {
+    const project = await db.getProjectById(projectId);
+    if (!project || project.userId !== SINGLE_USER_ID) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
     // Verify repository ownership
-    const repository = await prisma.repository.findFirst({
-      where: {
-        id: repositoryId,
-        githubConnectionId: user.githubConnection?.id,
-      },
-    });
-
+    const repositories = await db.getRepositories(SINGLE_USER_ID);
+    const repository = repositories.find(r => r.id === repositoryId);
     if (!repository) {
       return NextResponse.json({ error: 'Repository not found' }, { status: 404 });
     }
 
     // Add repository to project
-    const updatedRepository = await prisma.repository.update({
-      where: { id: repositoryId },
-      data: { projectId: projectId },
-    });
+    const updatedRepository = await db.updateRepository(repositoryId, { projectId });
 
-    return NextResponse.json({ repository: serializeRepository(updatedRepository) });
+    return NextResponse.json({ repository: updatedRepository });
   } catch (error) {
     console.error('Error adding repository to project:', error);
     return NextResponse.json(
@@ -81,11 +46,6 @@ export async function DELETE(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const { searchParams } = new URL(req.url);
     const repositoryId = searchParams.get('repositoryId');
     const { projectId } = await params;
@@ -94,33 +54,16 @@ export async function DELETE(
       return NextResponse.json({ error: 'Repository ID is required' }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
     // Verify project ownership
-    const project = await prisma.project.findFirst({
-      where: {
-        id: projectId,
-        userId: user.id,
-      },
-    });
-
-    if (!project) {
+    const project = await db.getProjectById(projectId);
+    if (!project || project.userId !== SINGLE_USER_ID) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
     // Remove repository from project
-    const updatedRepository = await prisma.repository.update({
-      where: { id: repositoryId },
-      data: { projectId: null },
-    });
+    const updatedRepository = await db.updateRepository(repositoryId, { projectId: undefined });
 
-    return NextResponse.json({ repository: serializeRepository(updatedRepository) });
+    return NextResponse.json({ repository: updatedRepository });
   } catch (error) {
     console.error('Error removing repository from project:', error);
     return NextResponse.json(

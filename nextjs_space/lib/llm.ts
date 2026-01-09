@@ -3,7 +3,7 @@ import 'server-only';
 import OpenAI from 'openai';
 
 // User-selected model; default to a higher-quality option
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'z-ai/glm-4.7';
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openai/gpt-4o-mini';
 
 let openai: OpenAI | null = null;
 
@@ -19,6 +19,7 @@ function getClient(): OpenAI {
   openai = new OpenAI({
     baseURL: 'https://openrouter.ai/api/v1',
     apiKey,
+    timeout: 30000, // 30 second timeout
     // OpenRouter specific headers
     defaultHeaders: {
       'HTTP-Referer': 'https://reponexus.dev', 

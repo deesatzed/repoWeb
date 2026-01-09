@@ -39,12 +39,12 @@ export default function ProjectCard({ project }: ProjectCardProps) {
   const analysis = project.aiAnalysis;
 
   return (
-    <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 hover:border-purple-500/50 transition-colors">
+    <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 hover:border-blue-600/50 transition-colors">
       <CardHeader>
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <CardTitle className="text-white flex items-center gap-2">
-              <FolderOpen className="h-5 w-5 text-purple-400" />
+              <FolderOpen className="h-5 w-5 text-blue-500" />
               {project.name}
             </CardTitle>
             {project.description && (
@@ -67,13 +67,13 @@ export default function ProjectCard({ project }: ProjectCardProps) {
             {/* Technical Skills Demonstrated */}
             {analysis.technicalSkills && analysis.technicalSkills.length > 0 && (
               <div>
-                <h4 className="text-sm font-semibold text-purple-300 mb-2 flex items-center gap-2">
+                <h4 className="text-sm font-semibold text-blue-300 mb-2 flex items-center gap-2">
                   <Code2 className="h-4 w-4" />
                   Technical Skills Demonstrated
                 </h4>
                 <div className="flex flex-wrap gap-2">
                   {analysis.technicalSkills.map((skill, i) => (
-                    <Badge key={i} variant="secondary" className="bg-purple-500/10 text-purple-200 border-purple-500/20">
+                    <Badge key={i} variant="secondary" className="bg-blue-600/10 text-blue-200 border-blue-600/20">
                       {skill}
                     </Badge>
                   ))}
@@ -97,8 +97,8 @@ export default function ProjectCard({ project }: ProjectCardProps) {
 
             {/* Skill Demonstration (Main highlight) */}
             {analysis.skillDemonstration && (
-              <div className="bg-purple-500/5 border border-purple-500/20 rounded-lg p-4">
-                <h4 className="text-sm font-semibold text-purple-300 mb-2 flex items-center gap-2">
+              <div className="bg-blue-600/5 border border-blue-600/20 rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-blue-300 mb-2 flex items-center gap-2">
                   <Target className="h-4 w-4" />
                   What This Demonstrates
                 </h4>

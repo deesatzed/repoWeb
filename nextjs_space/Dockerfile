@@ -27,12 +27,7 @@ ENV NEXT_TELEMETRY_DISABLED 1
 # Set output mode to standalone for Docker
 ENV NEXT_OUTPUT_MODE standalone
 
-# Generate Prisma Client
-RUN npx prisma generate
-
 # Build the app
-# Note: If your build requires database access (e.g. for static pages), 
-# you may need to provide a dummy DATABASE_URL or build arguments.
 RUN yarn build
 
 # Production image, copy all the files and run next
@@ -49,15 +44,13 @@ RUN adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public
 
-COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-
 # Set the correct permission for prerender cache
 RUN mkdir .next
 RUN chown nextjs:nodejs .next
 
-# Create data directory for SQLite
-RUN mkdir -p /data
-RUN chown nextjs:nodejs /data
+# Create data directory for JSON storage
+RUN mkdir -p /app/data
+RUN chown nextjs:nodejs /app/data
 
 # Automatically leverage output traces to reduce image size
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./standalone

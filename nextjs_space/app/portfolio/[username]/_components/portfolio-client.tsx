@@ -11,7 +11,9 @@ import {
   Award,
   Copy,
   Check,
-  Stars
+  Stars,
+  ExternalLink,
+  FolderPlus
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -30,14 +32,31 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
   const projects = data?.projects ?? [];
   const repositories = data?.repositories ?? [];
   const githubUsername = data?.githubUsername ?? '';
-  const allRepos = useMemo(() => {
-    const projectRepos = projects.flatMap((p: any) => p?.repositories ?? []);
-    const combined = [...repositories, ...projectRepos];
-    const byId = new Map<string, any>();
-    combined.forEach((r: any) => {
-      if (r?.id) byId.set(r.id, r);
+
+  // Separate repos into grouped and ungrouped
+  const { groupedRepos, ungroupedRepos, allRepos } = useMemo(() => {
+    const grouped: Record<string, any[]> = {};
+    const ungrouped: any[] = [];
+    const all: any[] = [];
+
+    // Repos from projects (grouped)
+    projects?.forEach((project: any) => {
+      const projectRepos = project?.repositories ?? [];
+      if (projectRepos.length > 0) {
+        grouped[project.name] = projectRepos;
+        all.push(...projectRepos);
+      }
     });
-    return Array.from(byId.values());
+
+    // Individual repos (not in any project)
+    const projectRepoIds = new Set(
+      projects?.flatMap((p: any) => p?.repositories?.map((r: any) => r?.id) ?? []) ?? []
+    );
+    const individualRepos = repositories.filter((r: any) => !projectRepoIds.has(r?.id));
+    ungrouped.push(...individualRepos);
+    all.push(...individualRepos);
+
+    return { groupedRepos: grouped, ungroupedRepos: ungrouped, allRepos: all };
   }, [projects, repositories]);
 
   // Calculate aggregate skills across all projects and repositories
@@ -125,13 +144,13 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-slate-900 to-cyan-900">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800">
       {/* Header */}
       <header className="bg-slate-900/50 backdrop-blur-lg border-b border-slate-800 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <Link href="/" className="flex items-center gap-2">
-              <div className="bg-gradient-to-br from-purple-600 to-blue-600 p-2 rounded-lg">
+            <Link href="/dashboard" className="flex items-center gap-2">
+              <div className="bg-gradient-to-br from-blue-600 to-blue-400 p-2 rounded-lg">
                 <Code2 className="w-5 h-5 text-white" />
               </div>
               <span className="text-2xl font-bold text-white">
@@ -157,8 +176,13 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
                   </>
                 )}
               </Button>
+              <Link href="/dashboard">
+                <Button variant="outline" className="border-slate-600 text-slate-200 hover:bg-slate-800">
+                  Edit Portfolio
+                </Button>
+              </Link>
               <Link href="/auth/signin">
-                <Button className="bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600">
+                <Button className="bg-blue-600 hover:bg-blue-700">
                   Create Your Portfolio
                 </Button>
               </Link>
@@ -176,16 +200,26 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
             transition={{ duration: 0.6 }}
             className="text-center mb-12"
           >
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-purple-500/10 border border-purple-500/20 mb-6">
-              <Briefcase className="w-4 h-4 text-purple-400" />
-              <span className="text-sm text-purple-300">Developer Portfolio</span>
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-600/10 border border-blue-600/20 mb-6">
+              <Briefcase className="w-4 h-4 text-blue-500" />
+              <span className="text-sm text-blue-300">Developer Portfolio</span>
             </div>
-            <h1 className="text-6xl font-bold mb-4 text-white">
-              {githubUsername}
+            <h1 className="text-5xl font-bold mb-4 text-white">
+              GitHub Repositories of {githubUsername}
             </h1>
             <p className="text-xl text-slate-300 max-w-2xl mx-auto mb-6">
               Technical skills and engineering capabilities demonstrated through real projects
             </p>
+            <a
+              href={`https://github.com/${githubUsername}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors mb-8"
+            >
+              <Github className="w-5 h-5" />
+              <span className="text-sm">View on GitHub</span>
+              <ExternalLink className="w-4 h-4" />
+            </a>
 
             {targetRoles?.length > 0 && (
               <div className="flex flex-wrap justify-center gap-3 mb-8">
@@ -213,7 +247,7 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
                   className="bg-slate-800/50 backdrop-blur-lg border border-slate-700 rounded-2xl p-6"
                 >
                   <div className="flex items-center justify-center gap-3 mb-2">
-                    <Briefcase className="w-6 h-6 text-purple-400" />
+                    <Briefcase className="w-6 h-6 text-blue-500" />
                     <span className="text-3xl font-bold text-white">{projects?.length ?? 0}</span>
                   </div>
                   <p className="text-slate-400">Major Projects</p>
@@ -257,14 +291,14 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
               className="bg-slate-800/50 backdrop-blur-lg border border-slate-700 rounded-2xl p-8 mb-8"
             >
               <div className="flex items-center gap-2 mb-4">
-                <Sparkles className="w-5 h-5 text-purple-400" />
+                <Sparkles className="w-5 h-5 text-blue-500" />
                 <h3 className="text-xl font-semibold text-white">Technical Competencies</h3>
               </div>
               <div className="flex flex-wrap gap-2">
                 {aggregateSkills.skills.map((skill) => (
                   <span
                     key={skill}
-                    className="px-3 py-1.5 bg-purple-500/10 border border-purple-500/20 rounded-lg text-purple-300 text-sm"
+                    className="px-3 py-1.5 bg-blue-600/10 border border-blue-600/20 rounded-lg text-blue-300 text-sm"
                   >
                     {skill}
                   </span>
@@ -347,7 +381,7 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
                         {repo.aiAnalysis.skillsDemonstrated.slice(0, 3).map((skill: string, skillIdx: number) => (
                           <span
                             key={skillIdx}
-                            className="px-2 py-1 rounded-md bg-purple-500/10 border border-purple-500/20 text-xs text-purple-200"
+                            className="px-2 py-1 rounded-md bg-blue-600/10 border border-blue-600/20 text-xs text-blue-200"
                           >
                             {skill}
                           </span>
@@ -365,8 +399,8 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
       {/* Engineering DNA Section */}
       <EngineeringDNA username={githubUsername} />
 
-      {/* Major Projects Section */}
-      {projects?.length > 0 && (
+      {/* Grouped Repository Sections */}
+      {Object.keys(groupedRepos).length > 0 && (
         <section className="py-12 px-6">
           <div className="max-w-7xl mx-auto">
             <motion.div
@@ -375,31 +409,47 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
               transition={{ duration: 0.6 }}
             >
               <div className="flex items-center gap-3 mb-8">
-                <Briefcase className="w-7 h-7 text-purple-400" />
-                <h2 className="text-4xl font-bold text-white">Major Projects</h2>
+                <FolderPlus className="w-7 h-7 text-blue-500" />
+                <h2 className="text-4xl font-bold text-white">Project Categories</h2>
               </div>
               <p className="text-slate-300 mb-8 text-lg">
-                Complex, multi-faceted projects demonstrating technical evolution and engineering maturity
+                Repositories organized by project and category
               </p>
-              <div className="space-y-6">
-                {projects.map((project: any, index: number) => (
-                  <motion.div
-                    key={project?.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.6, delay: 0.1 * index }}
-                  >
-                    <ProjectCard project={project} />
-                  </motion.div>
-                ))}
-              </div>
+
+              {Object.entries(groupedRepos).map(([groupName, repos], groupIndex) => (
+                <motion.div
+                  key={groupName}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.1 * groupIndex }}
+                  className="mb-12"
+                >
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-600 to-transparent" />
+                    <h3 className="text-2xl font-bold text-white px-4">{groupName}</h3>
+                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-600 to-transparent" />
+                  </div>
+                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {repos.map((repo: any, repoIndex: number) => (
+                      <motion.div
+                        key={repo?.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.4, delay: 0.05 * repoIndex }}
+                      >
+                        <RepositoryCard repository={repo} />
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+              ))}
             </motion.div>
           </div>
         </section>
       )}
 
       {/* Individual Technical Works */}
-      {repositories?.length > 0 && (
+      {ungroupedRepos?.length > 0 && (
         <section className="py-12 px-6 pb-24">
           <div className="max-w-7xl mx-auto">
             <motion.div
@@ -415,7 +465,7 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
                 Focused implementations showcasing specific technical skills and problem-solving approaches
               </p>
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {repositories.map((repo: any, index: number) => (
+                {ungroupedRepos.map((repo: any, index: number) => (
                   <motion.div
                     key={repo?.id}
                     initial={{ opacity: 0, y: 20 }}
@@ -432,7 +482,7 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
       )}
 
       {/* Empty State */}
-      {projects?.length === 0 && repositories?.length === 0 && (
+      {Object.keys(groupedRepos).length === 0 && ungroupedRepos?.length === 0 && (
         <section className="py-24 px-6">
           <div className="max-w-2xl mx-auto text-center">
             <Github className="w-16 h-16 text-slate-600 mx-auto mb-6" />

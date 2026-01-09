@@ -1,37 +1,14 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import prisma from '@/lib/db';
+import { db } from '@/lib/storage';
 import { encrypt } from '@/lib/encryption';
 import { GitHubService } from '@/lib/github-api';
-import { transitionWorkflowState } from '@/lib/workflow-state';
+
+const SINGLE_USER_ID = 'single-user';
 
 export async function POST(request: Request) {
   try {
-    const session = await auth();
-
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const dbUser = await prisma.user.findUnique({ where: { id: session.user.id } });
-    if (!dbUser) {
-      const isDev = process.env.NODE_ENV !== 'production';
-      return NextResponse.json(
-        {
-          error: 'Unauthorized',
-          ...(isDev
-            ? {
-                details: 'Session user not found in DB (stale session). Sign out and sign in again.',
-                sessionUserId: session.user.id,
-              }
-            : null),
-        },
-        { status: 401 }
-      );
-    }
-
     const body = await request.json();
     const { githubToken } = body ?? {};
 
@@ -56,27 +33,16 @@ export async function POST(request: Request) {
       );
     }
 
-    // Store or update GitHub connection
-    const connection = await prisma.gitHubConnection.upsert({
-      where: { userId: session.user.id },
-      update: {
-        githubUsername: githubUser?.login ?? '',
-        githubToken: encryptedToken,
-        updatedAt: new Date(),
-      },
-      create: {
-        userId: session.user.id,
-        githubUsername: githubUser?.login ?? '',
-        githubToken: encryptedToken,
-      },
-    });
+    // Ensure user exists
+    await db.upsertUser({ id: SINGLE_USER_ID, email: 'single-user@local' });
 
-    // Transition workflow state to CONNECTED
-    await transitionWorkflowState(
-      session.user.id,
-      'CONNECTED',
-      `Connected GitHub account: ${githubUser?.login}`
-    );
+    // Store or update GitHub connection
+    await db.upsertGitHubConnection({
+      id: `conn_${SINGLE_USER_ID}`,
+      userId: SINGLE_USER_ID,
+      githubUsername: githubUser?.login ?? '',
+      githubToken: encryptedToken,
+    });
 
     return NextResponse.json({
       success: true,
@@ -84,18 +50,8 @@ export async function POST(request: Request) {
     });
   } catch (error: any) {
     console.error('GitHub connect error:', error);
-
-    const isDev = process.env.NODE_ENV !== 'production';
     return NextResponse.json(
-      {
-        error: 'Failed to connect GitHub account',
-        ...(isDev
-          ? {
-              details: error?.message ?? String(error),
-              code: error?.code,
-            }
-          : null),
-      },
+      { error: 'Failed to connect GitHub account', details: error?.message },
       { status: 500 }
     );
   }
@@ -103,38 +59,10 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
-    const session = await auth();
-
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const dbUser = await prisma.user.findUnique({ where: { id: session.user.id } });
-    if (!dbUser) {
-      const isDev = process.env.NODE_ENV !== 'production';
-      return NextResponse.json(
-        {
-          error: 'Unauthorized',
-          ...(isDev
-            ? {
-                details: 'Session user not found in DB (stale session). Sign out and sign in again.',
-                sessionUserId: session.user.id,
-              }
-            : null),
-        },
-        { status: 401 }
-      );
-    }
-
-    const connection = await prisma.gitHubConnection.findUnique({
-      where: { userId: session.user.id },
-    });
+    const connection = await db.getGitHubConnection(SINGLE_USER_ID);
 
     if (!connection) {
-      return NextResponse.json(
-        { connected: false },
-        { status: 200 }
-      );
+      return NextResponse.json({ connected: false }, { status: 200 });
     }
 
     return NextResponse.json({
@@ -144,18 +72,8 @@ export async function GET(request: Request) {
     });
   } catch (error: any) {
     console.error('GitHub connection check error:', error);
-
-    const isDev = process.env.NODE_ENV !== 'production';
     return NextResponse.json(
-      {
-        error: 'Failed to check GitHub connection',
-        ...(isDev
-          ? {
-              details: error?.message ?? String(error),
-              code: error?.code,
-            }
-          : null),
-      },
+      { error: 'Failed to check GitHub connection', details: error?.message },
       { status: 500 }
     );
   }

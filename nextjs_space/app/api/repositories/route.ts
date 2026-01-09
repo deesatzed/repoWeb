@@ -1,61 +1,24 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import prisma from '@/lib/db';
+import { db } from '@/lib/storage';
+
+const SINGLE_USER_ID = 'single-user';
 
 export async function GET(request: Request) {
   try {
-    const session = await auth();
+    const repositories = await db.getRepositories(SINGLE_USER_ID);
 
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const repositories = await prisma.repository.findMany({
-      where: {
-        githubConnection: {
-          userId: session.user.id,
-        },
-      },
-      include: {
-        aiAnalysis: true,
-      },
-      orderBy: [
-        { isFeatured: 'desc' },
-        { sortOrder: 'asc' },
-        { stargazersCount: 'desc' },
-      ],
+    // Sort repositories: featured first, then by stars desc
+    const sortedRepos = repositories.sort((a, b) => {
+      const aScore = (a.isFeatured ? 1 : 0) * 1000 + (a.stargazersCount ?? 0);
+      const bScore = (b.isFeatured ? 1 : 0) * 1000 + (b.stargazersCount ?? 0);
+      return bScore - aScore;
     });
 
-    const parseJsonArray = (val: string | string[] | null | undefined) => {
-      if (!val) return [];
-      if (Array.isArray(val)) return val;
-      try {
-        return JSON.parse(val || '[]');
-      } catch {
-        return [];
-      }
-    };
-
-    // Convert BigInt to string for JSON serialization and parse topics and analysis
-    const serializedRepos = repositories?.map((repo: any) => ({
-      ...repo,
-      githubId: repo?.githubId?.toString() ?? '0',
-      topics: parseJsonArray(repo.topics),
-      aiAnalysis: repo.aiAnalysis ? {
-        ...repo.aiAnalysis,
-        techStack: parseJsonArray(repo.aiAnalysis.techStack),
-        keyFeatures: parseJsonArray(repo.aiAnalysis.keyFeatures),
-        strengths: parseJsonArray(repo.aiAnalysis.strengths),
-        architecturePatterns: parseJsonArray(repo.aiAnalysis.architecturePatterns),
-        skillsDemonstrated: parseJsonArray(repo.aiAnalysis.skillsDemonstrated),
-      } : null,
-    })) ?? [];
-
-    return NextResponse.json({ repositories: serializedRepos });
+    return NextResponse.json({ repositories: sortedRepos });
   } catch (error: any) {
-    console.error('Fetch repositories error:', error);
+    console.error('Error fetching repositories:', error);
     return NextResponse.json(
       { error: 'Failed to fetch repositories' },
       { status: 500 }
@@ -65,12 +28,6 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const session = await auth();
-
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const body = await request.json();
     const { repositoryId, updates } = body ?? {};
 
@@ -82,14 +39,8 @@ export async function PATCH(request: Request) {
     }
 
     // Verify ownership
-    const repository = await prisma.repository.findFirst({
-      where: {
-        id: repositoryId,
-        githubConnection: {
-          userId: session.user.id,
-        },
-      },
-    });
+    const repositories = await db.getRepositories(SINGLE_USER_ID);
+    const repository = repositories.find(r => r.id === repositoryId);
 
     if (!repository) {
       return NextResponse.json(
@@ -98,40 +49,57 @@ export async function PATCH(request: Request) {
       );
     }
 
-    // Prepare updates
-    const preparedUpdates = { ...updates };
-    if (preparedUpdates.topics && Array.isArray(preparedUpdates.topics)) {
-      preparedUpdates.topics = JSON.stringify(preparedUpdates.topics);
-    }
-
     // Update repository
-    const updated = await prisma.repository.update({
-      where: { id: repositoryId },
-      data: preparedUpdates ?? {},
-    });
-
-    const parseJsonArray = (val: string | string[] | null | undefined) => {
-      if (!val) return [];
-      if (Array.isArray(val)) return val;
-      try {
-        return JSON.parse(val || '[]');
-      } catch {
-        return [];
-      }
-    };
+    const updated = await db.updateRepository(repositoryId, updates ?? {});
 
     return NextResponse.json({
       success: true,
-      repository: {
-        ...updated,
-        githubId: updated?.githubId?.toString() ?? '0',
-        topics: parseJsonArray(updated.topics),
-      },
+      repository: updated,
     });
   } catch (error: any) {
     console.error('Update repository error:', error);
     return NextResponse.json(
       { error: 'Failed to update repository' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const body = await request.json();
+    const { repositoryIds } = body ?? {};
+
+    if (!repositoryIds || !Array.isArray(repositoryIds) || repositoryIds.length === 0) {
+      return NextResponse.json(
+        { error: 'Repository IDs are required' },
+        { status: 400 }
+      );
+    }
+
+    // Verify ownership for all repos
+    const repositories = await db.getRepositories(SINGLE_USER_ID);
+    const validRepoIds = repositoryIds.filter(id => repositories.some(r => r.id === id));
+
+    if (validRepoIds.length === 0) {
+      return NextResponse.json(
+        { error: 'No valid repositories found' },
+        { status: 404 }
+      );
+    }
+
+    // Delete repositories
+    const deletedCount = await db.deleteRepositories(validRepoIds);
+
+    return NextResponse.json({
+      success: true,
+      deletedCount,
+      message: `Deleted ${deletedCount} repository${deletedCount !== 1 ? 'ies' : ''}`,
+    });
+  } catch (error: any) {
+    console.error('Delete repository error:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete repositories' },
       { status: 500 }
     );
   }

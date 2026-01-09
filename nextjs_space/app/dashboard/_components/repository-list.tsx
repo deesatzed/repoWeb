@@ -16,7 +16,10 @@ import {
   XCircle,
   CheckCircle2,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Trash2,
+  Check,
+  FolderPlus
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -77,6 +80,8 @@ export default function RepositoryList({
   const [failedRepos, setFailedRepos] = useState<Set<string>>(new Set());
 
   const [autoStatus, setAutoStatus] = useState<string | null>(null);
+  const [selectedRepos, setSelectedRepos] = useState<Set<string>>(new Set());
+  const [selectAll, setSelectAll] = useState(false);
 
   useEffect(() => {
     console.log('RepositoryList mounted');
@@ -350,6 +355,102 @@ export default function RepositoryList({
   const failedCount = failedRepos.size;
   const totalActive = analyzedCount + pendingCount;
 
+  const handleSelectRepo = (repoId: string) => {
+    const newSelected = new Set(selectedRepos);
+    if (newSelected.has(repoId)) {
+      newSelected.delete(repoId);
+    } else {
+      newSelected.add(repoId);
+    }
+    setSelectedRepos(newSelected);
+    setSelectAll(newSelected.size === repositories.length);
+  };
+
+  const handleSelectAll = () => {
+    if (selectAll) {
+      setSelectedRepos(new Set());
+    } else {
+      setSelectedRepos(new Set(repositories.map(r => r.id)));
+    }
+    setSelectAll(!selectAll);
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedRepos.size === 0) {
+      toast.error('No repositories selected');
+      return;
+    }
+
+    if (!confirm(`Delete ${selectedRepos.size} repository${selectedRepos.size !== 1 ? 'ies' : ''}? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/repositories', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repositoryIds: Array.from(selectedRepos) }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success(data.message || 'Repositories deleted successfully');
+        setSelectedRepos(new Set());
+        setSelectAll(false);
+        fetchRepositories();
+      } else {
+        toast.error(data.error || 'Failed to delete repositories');
+      }
+    } catch (error: any) {
+      console.error('Delete error:', error);
+      toast.error('Failed to delete repositories');
+    }
+  };
+
+  const handleGroupSelected = async () => {
+    if (selectedRepos.size === 0) {
+      toast.error('No repositories selected');
+      return;
+    }
+
+    if (selectedRepos.size < 2) {
+      toast.error('Select at least 2 repositories to group together');
+      return;
+    }
+
+    const projectName = prompt('Enter a name for this project group:');
+    if (!projectName || !projectName.trim()) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: projectName.trim(),
+          description: '',
+          repositoryIds: Array.from(selectedRepos),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success('Project created successfully');
+        setSelectedRepos(new Set());
+        setSelectAll(false);
+        fetchRepositories();
+      } else {
+        toast.error(data.error || 'Failed to create project');
+      }
+    } catch (error: any) {
+      console.error('Group error:', error);
+      toast.error('Failed to create project');
+    }
+  };
+
   if (repositories?.length === 0) {
     return (
       <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-8">
@@ -435,9 +536,42 @@ export default function RepositoryList({
         </div>
       </Card>
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <h2 className="text-2xl font-bold text-white">Your Repositories ({repositories?.length ?? 0})</h2>
-        {/* Bulk button removed to reduce confusion - rely on Checklist or Auto-trigger */}
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selectAll}
+              onChange={handleSelectAll}
+              className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-600 focus:ring-blue-500 focus:ring-offset-slate-900"
+            />
+            Select All
+          </label>
+          {selectedRepos.size > 0 && (
+            <>
+              <span className="text-sm text-slate-400">({selectedRepos.size} selected)</span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleGroupSelected}
+                className="border-blue-600/50 text-blue-300 hover:bg-blue-600/10 h-8"
+              >
+                <FolderPlus className="h-3 w-3 mr-1" />
+                Group
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDeleteSelected}
+                className="border-red-600/50 text-red-300 hover:bg-red-600/10 h-8"
+              >
+                <Trash2 className="h-3 w-3 mr-1" />
+                Delete
+              </Button>
+            </>
+          )}
+        </div>
       </div>
       
       <div className="grid gap-4">
@@ -448,10 +582,11 @@ export default function RepositoryList({
           const isRecentlyUpdated = new Date(repo.updatedAt).getTime() > syncThreshold;
           
           return (
-            <Card 
-              key={repo?.id} 
+            <Card
+              key={repo?.id}
               className={cn(
                 "bg-slate-800/50 backdrop-blur-sm border-slate-700 p-6 hover:border-purple-500/50 transition-all relative overflow-hidden",
+                selectedRepos.has(repo.id) && "border-blue-600/50 ring-1 ring-blue-600/30",
                 isRecentlyUpdated && "border-green-500/50 ring-1 ring-green-500/20"
               )}
             >
@@ -459,7 +594,14 @@ export default function RepositoryList({
                 <div className="absolute top-0 right-0 w-32 h-32 -mr-16 -mt-16 bg-green-500/10 rotate-45 pointer-events-none" />
               )}
               <div className="flex items-start justify-between gap-4 relative z-10">
-                <div className="flex-1 min-w-0">
+                <div className="flex items-start gap-3 flex-1 min-w-0">
+                  <input
+                    type="checkbox"
+                    checked={selectedRepos.has(repo.id)}
+                    onChange={() => handleSelectRepo(repo.id)}
+                    className="mt-1 w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-600 focus:ring-blue-500 focus:ring-offset-slate-900 cursor-pointer flex-shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
                     <h3 className="text-lg font-semibold text-white truncate">{repo?.name}</h3>
                     {repoStatus[repo.id] && (
@@ -529,28 +671,14 @@ export default function RepositoryList({
                   {repo?.aiAnalysis && (
                     <div className="mt-4 p-4 rounded-lg bg-slate-900/50 border border-slate-700">
                       <div className="flex items-center gap-2 mb-2">
-                        <Sparkles className="w-4 h-4 text-purple-400" />
-                        <span className="text-sm font-semibold text-purple-300">AI Insights</span>
+                        <Sparkles className="w-4 h-4 text-blue-500" />
+                        <span className="text-sm font-semibold text-blue-300">AI Insights</span>
                       </div>
                       
-                      <div className="grid grid-cols-2 gap-4 mb-3">
-                        {repo.aiAnalysis.complexityScore !== undefined && (
-                          <div>
-                            <p className="text-xs text-slate-500">Complexity</p>
-                            <p className="text-lg font-semibold text-white">{repo.aiAnalysis.complexityScore}/100</p>
-                          </div>
-                        )}
-                        {repo.aiAnalysis.codeQualityScore !== undefined && (
-                          <div>
-                            <p className="text-xs text-slate-500">Code Quality</p>
-                            <p className="text-lg font-semibold text-white">{repo.aiAnalysis.codeQualityScore}/100</p>
-                          </div>
-                        )}
-                      </div>
 
                       {repo.aiAnalysis.projectType && (
                         <div className="mb-2">
-                          <Badge variant="outline" className="border-cyan-500/50 text-cyan-300">
+                          <Badge variant="outline" className="border-blue-500/50 text-blue-300">
                             {repo.aiAnalysis.projectType}
                           </Badge>
                         </div>
@@ -624,6 +752,7 @@ export default function RepositoryList({
                     </div>
                   )}
                 </div>
+              </div>
 
                 {!previewOnly && (
                   <div className="flex flex-col gap-2 flex-shrink-0">

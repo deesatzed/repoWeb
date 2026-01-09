@@ -20,6 +20,8 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { Plus, FolderOpen, Eye, EyeOff, Trash2, Sparkles, Filter, Check, X, Search, Pencil } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useWorkflowGate } from '@/app/dashboard/_hooks/use-workflow-gate';
+import { GatedButton } from '@/app/dashboard/_components/gated-button';
 
 interface Repository {
   id: string;
@@ -79,6 +81,7 @@ export function PortfolioCuration() {
   const [isAutoCuratePreviewOpen, setIsAutoCuratePreviewOpen] = useState(false);
   const [autoCuratePlan, setAutoCuratePlan] = useState<AutoCuratePlan | null>(null);
   const [isApplyingAutoCuratePlan, setIsApplyingAutoCuratePlan] = useState(false);
+  const gate = useWorkflowGate();
 
   useEffect(() => {
     loadData();
@@ -101,7 +104,15 @@ export function PortfolioCuration() {
 
       const data = await res.json();
 
-      if (!res.ok) throw new Error(data.error || 'Failed to generate auto-curate preview');
+      if (!res.ok) {
+        // Handle workflow validation errors specifically
+        if (res.status === 403 && data.reason) {
+          toast.error(data.reason, { id: toastId });
+          gate.refresh(); // Refresh workflow status
+          return;
+        }
+        throw new Error(data.error || 'Failed to generate auto-curate preview');
+      }
       if (!data?.plan) throw new Error('Missing preview plan');
 
       setAutoCuratePlan(data.plan as AutoCuratePlan);
@@ -139,6 +150,7 @@ export function PortfolioCuration() {
       setIsAutoCuratePreviewOpen(false);
       setAutoCuratePlan(null);
       loadData();
+      gate.refresh(); // Refresh workflow status after successful grouping
     } catch (error) {
       console.error('Auto-curate apply error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to apply auto-curate plan');
@@ -202,6 +214,9 @@ export function PortfolioCuration() {
         console.log('PortfolioCuration: Projects loaded', data.projects?.length);
         setProjects(data.projects || []);
       }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('portfolio-updated'));
+      }
     } catch (error) {
       console.error('Error loading data:', error);
       toast.error('Failed to load portfolio data');
@@ -231,6 +246,9 @@ export function PortfolioCuration() {
           repo.id === repoId ? { ...repo, isExcluded: !currentExcluded } : repo
         )
       );
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('portfolio-updated'));
+      }
 
       toast.success(!currentExcluded ? 'Repository hidden' : 'Repository visible');
     } catch (error) {
@@ -505,7 +523,7 @@ export function PortfolioCuration() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
-        <div className="w-12 h-12 rounded-full border-4 border-purple-500/30 border-t-purple-500 animate-spin mb-4" />
+        <div className="w-12 h-12 rounded-full border-4 border-blue-600/30 border-t-blue-600 animate-spin mb-4" />
         <div className="text-muted-foreground italic">Gathering your technical history...</div>
       </div>
     );
@@ -527,7 +545,7 @@ export function PortfolioCuration() {
         <DialogContent className="bg-slate-900 border-slate-800 text-white max-w-3xl">
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-purple-300" />
+              <Sparkles className="h-4 w-4 text-blue-500" />
               Auto-Grouping Preview
             </DialogTitle>
             <DialogDescription className="text-slate-400">
@@ -604,7 +622,7 @@ export function PortfolioCuration() {
                               <p className="text-sm font-semibold text-white truncate">{p.name}</p>
                               <p className="text-xs text-slate-500">{p.description}</p>
                             </div>
-                            <Badge variant="outline" className="border-cyan-500/40 text-cyan-300 text-[10px]">
+                            <Badge variant="outline" className="border-blue-500/40 text-blue-300 text-[10px]">
                               {p.repositoryIds.length} repos
                             </Badge>
                           </div>
@@ -644,7 +662,7 @@ export function PortfolioCuration() {
             <Button
               onClick={applyAutoCuratePlan}
               disabled={!autoCuratePlan || isApplyingAutoCuratePlan}
-              className="bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600"
+              className="bg-blue-600 hover:bg-blue-700"
             >
               {isApplyingAutoCuratePlan ? 'Applying...' : 'Apply Plan'}
             </Button>
@@ -654,21 +672,24 @@ export function PortfolioCuration() {
 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white">1. Select & Organize</h2>
+          <h2 className="text-2xl font-bold text-white">2. Select & Organize</h2>
           <p className="text-slate-400 mt-1 max-w-2xl">
             Choose your best work. Hide forks or boilerplate. Group related repos into projects (e.g. Frontend + Backend).
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button 
-            variant="outline" 
+          <GatedButton
+            variant="primary"
+            size="md"
             onClick={handleAutoCurate}
             disabled={isAutoCurating || loading}
-            className="border-purple-500/50 text-purple-300 hover:bg-purple-500/10"
+            gated={!gate.canGenerateGroupings}
+            gateReason={gate.getBlockedReason('generateGroupingSuggestions')}
+            icon={<Sparkles className={`h-4 w-4 ${isAutoCurating ? 'animate-spin' : ''}`} />}
+            className="border-blue-600/50 text-blue-300 hover:bg-blue-600/10"
           >
-            <Sparkles className={`h-4 w-4 mr-2 ${isAutoCurating ? 'animate-spin' : ''}`} />
             {isAutoCurating ? 'Organizing...' : 'Magic Auto-Curate'}
-          </Button>
+          </GatedButton>
 
           <Dialog open={isResetDialogOpen} onOpenChange={(open) => {
             setIsResetDialogOpen(open);
@@ -729,7 +750,7 @@ export function PortfolioCuration() {
             }
           }}>
             <DialogTrigger asChild>
-              <Button className="bg-purple-600 hover:bg-purple-700">
+              <Button className="bg-blue-600 hover:bg-blue-700">
                 <Plus className="h-4 w-4 mr-2" />
                 Create Project Group
               </Button>
@@ -951,7 +972,7 @@ export function PortfolioCuration() {
                 {projects.map(project => (
                   <Card
                     key={project.id}
-                    className={`bg-slate-800/40 border-slate-700 overflow-hidden ${dragOverProjectId === project.id ? 'ring-2 ring-purple-500/60' : ''}`}
+                    className={`bg-slate-800/40 border-slate-700 overflow-hidden ${dragOverProjectId === project.id ? 'ring-2 ring-blue-600/60' : ''}`}
                     onDragEnter={() => setDragOverProjectId(project.id)}
                     onDragLeave={() => setDragOverProjectId((current) => (current === project.id ? null : current))}
                     onDragOver={(e) => {
@@ -964,7 +985,7 @@ export function PortfolioCuration() {
                       <div>
                         <div className="flex items-center gap-2">
                           <h4 className="font-bold text-lg text-white">{project.name}</h4>
-                          <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/40">Project</Badge>
+                          <Badge className="bg-blue-600/20 text-blue-300 border-blue-600/40">Project</Badge>
                         </div>
                         {project.description && (
                           <p className="text-sm text-slate-400 mt-1">{project.description}</p>
@@ -986,7 +1007,7 @@ export function PortfolioCuration() {
                           onClick={() => analyzeProject(project.id)}
                           className="border-slate-700 text-slate-300 hover:bg-slate-700"
                         >
-                          <Sparkles className="h-4 w-4 mr-2 text-purple-400" />
+                          <Sparkles className="h-4 w-4 mr-2 text-blue-500" />
                           Deep Analysis
                         </Button>
                         <Button
@@ -1033,7 +1054,7 @@ export function PortfolioCuration() {
               {projects.length > 0 ? 'Remaining Repositories' : 'Individual Repositories'}
             </h3>
             <div
-              className={`rounded-lg border border-dashed p-3 transition-colors ${dragOverUngrouped ? 'border-purple-500/60 bg-purple-500/5' : 'border-slate-800'}`}
+              className={`rounded-lg border border-dashed p-3 transition-colors ${dragOverUngrouped ? 'border-blue-600/60 bg-blue-600/5' : 'border-slate-800'}`}
               onDragOver={(e) => {
                 e.preventDefault();
                 setDragOverUngrouped(true);

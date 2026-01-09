@@ -83,12 +83,12 @@ export default function SignUpPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-slate-900 to-cyan-900 flex items-center justify-center px-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 flex items-center justify-center px-6">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 mb-4">
+          <Link href="/dashboard" className="inline-flex items-center gap-2 mb-4">
             <div className="text-center">
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent mb-2">
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent mb-2">
                 RepoNexus
               </h1>
               <p className="text-slate-400">Create your account</p>
@@ -190,7 +190,7 @@ export default function SignUpPage() {
 
             <Button
               type="submit"
-              className="w-full bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600"
+              className="w-full bg-blue-600 hover:bg-blue-700"
               disabled={loading}
             >
               {loading ? 'Creating account...' : 'Sign Up'}
@@ -239,7 +239,7 @@ export default function SignUpPage() {
 
           <p className="mt-6 text-center text-sm text-slate-400">
             Already have an account?{' '}
-            <Link href="/auth/signin" className="text-purple-400 hover:text-purple-300">
+            <Link href="/auth/signin" className="text-blue-400 hover:text-blue-300">
               Sign in
             </Link>
           </p>

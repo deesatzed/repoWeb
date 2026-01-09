@@ -1,102 +1,36 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import prisma from '@/lib/db';
-import {
-  getCurrentWorkflowState,
-  transitionWorkflowState,
-  verifyStateRequirements,
-} from '@/lib/workflow-state';
+import { db } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
 
+const SINGLE_USER_ID = 'single-user';
+
 /**
  * GET /api/workflow/status
- *
- * Returns current workflow state and checks if automatic state transitions
- * should occur (e.g., ANALYZING → ANALYZED when all repos analyzed).
- *
- * This endpoint is called by the UI to:
- * 1. Display current workflow state
- * 2. Check if analysis is complete
- * 3. Auto-transition to ANALYZED when ready
- * 4. Determine what actions are available
+ * Returns current workflow state based on data in JSON storage.
  */
 export async function GET(request: Request) {
   try {
-    const session = await auth();
+    const [repositories, githubConnection] = await Promise.all([
+      db.getRepositories(SINGLE_USER_ID),
+      db.getGitHubConnection(SINGLE_USER_ID),
+    ]);
 
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const totalRepos = repositories.length;
+    const includedRepos = repositories.filter(r => !r.isExcluded);
+    const analyzedRepos = includedRepos.filter(r => r.aiAnalysis);
+    const unanalyzedRepos = includedRepos.filter(r => !r.aiAnalysis);
 
-    const userId = session.user.id;
-
-    // Get current workflow state
-    const currentState = await getCurrentWorkflowState(userId);
-
-    // Fetch repositories and analysis status
-    const [totalRepos, includedRepos, analyzedRepos, githubConnection] =
-      await Promise.all([
-        prisma.repository.count({
-          where: { githubConnection: { userId } },
-        }),
-        prisma.repository.findMany({
-          where: {
-            githubConnection: { userId },
-            isExcluded: false,
-          },
-          select: {
-            id: true,
-            name: true,
-            aiAnalysis: {
-              select: { id: true },
-            },
-          },
-        }),
-        prisma.repository.count({
-          where: {
-            githubConnection: { userId },
-            isExcluded: false,
-            aiAnalysis: { isNot: null },
-          },
-        }),
-        prisma.gitHubConnection.findUnique({
-          where: { userId },
-          select: {
-            githubUsername: true,
-            lastSyncedAt: true,
-          },
-        }),
-      ]);
-
-    const unanalyzedRepos = includedRepos.filter((r) => !r.aiAnalysis);
-
-    // Check if we should auto-transition to ANALYZED
-    if (
-      currentState === 'ANALYZING' &&
-      includedRepos.length > 0 &&
-      unanalyzedRepos.length === 0
-    ) {
-      await transitionWorkflowState(
-        userId,
-        'ANALYZED',
-        `All ${includedRepos.length} included repositories analyzed`
-      );
-
-      return NextResponse.json({
-        currentState: 'ANALYZED',
-        transitioned: true,
-        analysis: {
-          totalRepos,
-          includedRepos: includedRepos.length,
-          analyzedRepos: includedRepos.length,
-          unanalyzedRepos: [],
-          isComplete: true,
-        },
-        githubConnection,
-        availableActions: ['generateGroupingSuggestions', 'modifyCuration'],
-        blockedActions: [],
-      });
+    // Determine current state based on data
+    let currentState = 'INITIAL';
+    if (githubConnection) {
+      currentState = 'CONNECTED';
+      if (totalRepos > 0) {
+        currentState = 'SYNCED';
+        if (analyzedRepos.length > 0) {
+          currentState = 'ANALYZED';
+        }
+      }
     }
 
     // Determine available actions based on current state
@@ -106,33 +40,16 @@ export async function GET(request: Request) {
     switch (currentState) {
       case 'INITIAL':
         availableActions.push('connectGitHub');
-        blockedActions.push('syncRepos', 'curate', 'analyze', 'group');
+        blockedActions.push('syncRepos', 'curate', 'startAnalysis');
         break;
       case 'CONNECTED':
         availableActions.push('syncRepos');
-        blockedActions.push('curate', 'analyze', 'group');
+        blockedActions.push('curate', 'startAnalysis');
         break;
       case 'SYNCED':
-        availableActions.push('curate');
-        blockedActions.push('analyze', 'group');
-        break;
-      case 'CURATED':
-        if (includedRepos.length > 0) {
-          availableActions.push('startAnalysis');
-        }
-        blockedActions.push('group');
-        break;
-      case 'ANALYZING':
-        availableActions.push('viewProgress');
-        blockedActions.push('curate', 'group');
+        availableActions.push('curate', 'startAnalysis');
         break;
       case 'ANALYZED':
-        availableActions.push('generateGroupingSuggestions', 'modifyCuration');
-        break;
-      case 'GROUPING_SUGGESTED':
-        availableActions.push('refineGroupings', 'finalize');
-        break;
-      case 'FINALIZED':
         availableActions.push('viewPortfolio', 'modifyCuration');
         break;
     }
@@ -143,119 +60,29 @@ export async function GET(request: Request) {
       analysis: {
         totalRepos,
         includedRepos: includedRepos.length,
-        analyzedRepos,
-        unanalyzedRepos: unanalyzedRepos.map((r) => ({
-          id: r.id,
-          name: r.name,
-        })),
+        analyzedRepos: analyzedRepos.length,
+        unanalyzedRepos: unanalyzedRepos.map(r => ({ id: r.id, name: r.name })),
         isComplete: unanalyzedRepos.length === 0 && includedRepos.length > 0,
       },
-      githubConnection,
+      githubConnection: githubConnection ? {
+        githubUsername: githubConnection.githubUsername,
+        lastSyncedAt: githubConnection.lastSyncedAt,
+      } : null,
       availableActions,
       blockedActions,
     });
   } catch (error: any) {
     console.error('Workflow status error:', error);
     return NextResponse.json(
-      { error: 'Failed to get workflow status', details: error?.message || String(error) },
+      { error: 'Failed to get workflow status', details: error?.message },
       { status: 500 }
     );
   }
 }
 
 /**
- * POST /api/workflow/status
- *
- * Manually trigger workflow state transitions
- * Body: { action: 'startAnalysis' | 'completeAnalysis' | 'reset' }
+ * POST /api/workflow/status - No-op for simplified workflow
  */
 export async function POST(request: Request) {
-  try {
-    const session = await auth();
-
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { action } = await request.json();
-    const userId = session.user.id;
-
-    if (action === 'startAnalysis') {
-      // Transition to ANALYZING state
-      const currentState = await getCurrentWorkflowState(userId);
-
-      if (currentState !== 'CURATED') {
-        return NextResponse.json(
-          { error: 'Can only start analysis from CURATED state' },
-          { status: 400 }
-        );
-      }
-
-      const includedRepos = await prisma.repository.count({
-        where: {
-          githubConnection: { userId },
-          isExcluded: false,
-        },
-      });
-
-      if (includedRepos === 0) {
-        return NextResponse.json(
-          { error: 'No repositories to analyze (all excluded)' },
-          { status: 400 }
-        );
-      }
-
-      const result = await transitionWorkflowState(
-        userId,
-        'ANALYZING',
-        `Started analysis workflow for ${includedRepos} repositories`
-      );
-
-      if (!result.success) {
-        return NextResponse.json({ error: result.error }, { status: 400 });
-      }
-
-      return NextResponse.json({
-        success: true,
-        newState: 'ANALYZING',
-        message: `Analysis started for ${includedRepos} repositories`,
-      });
-    }
-
-    if (action === 'completeAnalysis') {
-      // Check if all repos are analyzed, then transition
-      const verification = await verifyStateRequirements(userId, 'ANALYZED');
-
-      if (!verification.satisfied) {
-        return NextResponse.json(
-          { error: verification.missing },
-          { status: 400 }
-        );
-      }
-
-      const result = await transitionWorkflowState(
-        userId,
-        'ANALYZED',
-        'Manual completion of analysis phase'
-      );
-
-      if (!result.success) {
-        return NextResponse.json({ error: result.error }, { status: 400 });
-      }
-
-      return NextResponse.json({
-        success: true,
-        newState: 'ANALYZED',
-        message: 'Analysis phase completed',
-      });
-    }
-
-    return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
-  } catch (error: any) {
-    console.error('Workflow action error:', error);
-    return NextResponse.json(
-      { error: 'Failed to execute workflow action', details: error?.message || String(error) },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json({ success: true, message: 'Workflow simplified - no manual transitions needed' });
 }

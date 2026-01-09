@@ -1,45 +1,33 @@
-import { PortfolioWorkflowState } from '@prisma/client';
-import prisma from './db';
+import { db } from './storage';
 
 /**
- * Workflow State Machine for Portfolio Curation
- *
- * User's required workflow:
- * 1. Login + GitHub token → CONNECTED
- * 2. Sync repos → SYNCED
- * 3. Manual curation (exclude/include) → CURATED
- * 4. Deep analysis on ALL included repos → ANALYZING → ANALYZED
- * 5. AI suggests groupings based on analysis → GROUPING_SUGGESTED
- * 6. User refines groupings → FINALIZED
- * 7. Public portfolio ready for employers
+ * Workflow State Machine for Portfolio Curation (Simplified for single-user mode)
  */
+
+export type PortfolioWorkflowState = 
+  | 'INITIAL'
+  | 'CONNECTED'
+  | 'SYNCED'
+  | 'CURATED'
+  | 'ANALYZING'
+  | 'ANALYZED'
+  | 'GROUPING_SUGGESTED'
+  | 'FINALIZED';
 
 // Valid state transitions
 const ALLOWED_TRANSITIONS: Record<PortfolioWorkflowState, PortfolioWorkflowState[]> = {
   INITIAL: ['CONNECTED'],
-  CONNECTED: ['SYNCED', 'INITIAL'], // Can disconnect GitHub
-  SYNCED: ['CURATED', 'CONNECTED'], // Can re-sync
-  CURATED: ['ANALYZING', 'SYNCED'], // Must analyze OR go back to sync
-  ANALYZING: ['ANALYZED', 'CURATED'], // Complete OR cancel (unlock)
-  ANALYZED: ['GROUPING_SUGGESTED', 'CURATED'], // Get suggestions OR re-curate
-  GROUPING_SUGGESTED: ['FINALIZED', 'ANALYZED'], // Finalize OR regenerate
-  FINALIZED: ['CURATED'], // Can go back to refine (must re-analyze)
+  CONNECTED: ['SYNCED', 'INITIAL'],
+  SYNCED: ['CURATED', 'CONNECTED'],
+  CURATED: ['ANALYZING', 'SYNCED'],
+  ANALYZING: ['ANALYZED', 'CURATED'],
+  ANALYZED: ['GROUPING_SUGGESTED', 'CURATED'],
+  GROUPING_SUGGESTED: ['FINALIZED', 'ANALYZED'],
+  FINALIZED: ['CURATED'],
 };
 
 // States that are locked (no modifications allowed)
 const LOCKED_STATES: PortfolioWorkflowState[] = ['ANALYZING'];
-
-// States that require specific data to exist
-const STATE_REQUIREMENTS: Record<PortfolioWorkflowState, string> = {
-  INITIAL: 'New user, no requirements',
-  CONNECTED: 'GitHub connection must exist',
-  SYNCED: 'At least one repository must be synced',
-  CURATED: 'At least one repository must be included (not excluded)',
-  ANALYZING: 'Analysis must be in progress',
-  ANALYZED: 'All included repositories must have AI analysis',
-  GROUPING_SUGGESTED: 'Projects must exist with AI-suggested groupings',
-  FINALIZED: 'User has approved final groupings',
-};
 
 export interface StateTransition {
   from: PortfolioWorkflowState;
@@ -93,14 +81,10 @@ export async function validateWorkflowAction(
   requiredState: PortfolioWorkflowState | PortfolioWorkflowState[],
   action: string
 ): Promise<WorkflowValidationResult> {
-  const settings = await prisma.portfolioSettings.findUnique({
-    where: { userId },
-  });
-
-  const currentState = settings?.workflowState || 'INITIAL';
+  const settings = await db.getSettings(userId);
+  const currentState = (settings?.workflowState as PortfolioWorkflowState) || 'INITIAL';
   const isLocked = isWorkflowLocked(currentState);
 
-  // If workflow is locked, no actions allowed (except unlocking)
   if (isLocked && action !== 'unlock') {
     return {
       allowed: false,
@@ -110,7 +94,6 @@ export async function validateWorkflowAction(
     };
   }
 
-  // Check if current state matches required state(s)
   const requiredStates = Array.isArray(requiredState) ? requiredState : [requiredState];
 
   if (!requiredStates.includes(currentState)) {
@@ -130,7 +113,7 @@ export async function validateWorkflowAction(
 }
 
 /**
- * Transition workflow state with audit logging
+ * Transition workflow state
  */
 export async function transitionWorkflowState(
   userId: string,
@@ -138,64 +121,20 @@ export async function transitionWorkflowState(
   reason?: string
 ): Promise<{ success: boolean; error?: string; newState?: PortfolioWorkflowState }> {
   try {
-    const settings = await prisma.portfolioSettings.findUnique({
-      where: { userId },
-    });
+    const settings = await db.getSettings(userId);
+    const currentState = (settings?.workflowState as PortfolioWorkflowState) || 'INITIAL';
 
-    if (!settings) {
-      // Auto-create settings if they don't exist
-      const newSettings = await prisma.portfolioSettings.create({
-        data: {
-          userId,
-          workflowState: targetState,
-          stateTransitionLog: JSON.stringify([
-            {
-              from: 'INITIAL',
-              to: targetState,
-              timestamp: new Date().toISOString(),
-              reason: reason || 'Initial state creation',
-            },
-          ]),
-        },
-      });
-
-      return { success: true, newState: newSettings.workflowState };
-    }
-
-    const currentState = settings.workflowState;
-
-    // Validate transition
     const validation = canTransition(currentState, targetState);
     if (!validation.allowed) {
       return { success: false, error: validation.reason };
     }
 
-    // Parse existing log
-    const existingLog: StateTransition[] = settings.stateTransitionLog
-      ? JSON.parse(settings.stateTransitionLog as string)
-      : [];
-
-    // Add new transition
-    const newTransition: StateTransition = {
-      from: currentState,
-      to: targetState,
-      timestamp: new Date().toISOString(),
-      reason,
-    };
-
-    const updatedLog = [...existingLog, newTransition];
-
-    // Update state
-    const updatedSettings = await prisma.portfolioSettings.update({
-      where: { userId },
-      data: {
-        workflowState: targetState,
-        workflowLockedAt: isWorkflowLocked(targetState) ? new Date() : null,
-        stateTransitionLog: JSON.stringify(updatedLog),
-      },
+    await db.upsertSettings({
+      userId,
+      workflowState: targetState,
     });
 
-    return { success: true, newState: updatedSettings.workflowState };
+    return { success: true, newState: targetState };
   } catch (error) {
     console.error('Workflow state transition error:', error);
     return { success: false, error: 'Failed to transition workflow state' };
@@ -211,9 +150,7 @@ export async function verifyStateRequirements(
 ): Promise<{ satisfied: boolean; missing?: string }> {
   switch (targetState) {
     case 'CONNECTED': {
-      const connection = await prisma.gitHubConnection.findFirst({
-        where: { userId },
-      });
+      const connection = await db.getGitHubConnection(userId);
       if (!connection) {
         return { satisfied: false, missing: 'GitHub connection required' };
       }
@@ -221,22 +158,16 @@ export async function verifyStateRequirements(
     }
 
     case 'SYNCED': {
-      const repoCount = await prisma.repository.count({
-        where: { githubConnection: { userId } },
-      });
-      if (repoCount === 0) {
+      const repos = await db.getRepositories(userId);
+      if (repos.length === 0) {
         return { satisfied: false, missing: 'At least one repository must be synced' };
       }
       break;
     }
 
     case 'CURATED': {
-      const includedCount = await prisma.repository.count({
-        where: {
-          githubConnection: { userId },
-          isExcluded: false,
-        },
-      });
+      const repos = await db.getRepositories(userId);
+      const includedCount = repos.filter(r => !r.isExcluded).length;
       if (includedCount === 0) {
         return { satisfied: false, missing: 'At least one repository must be included' };
       }
@@ -244,16 +175,8 @@ export async function verifyStateRequirements(
     }
 
     case 'ANALYZED': {
-      // All included repos must have analysis
-      const repos = await prisma.repository.findMany({
-        where: {
-          githubConnection: { userId },
-          isExcluded: false,
-        },
-        include: { aiAnalysis: true },
-      });
-
-      const unanalyzedRepos = repos.filter((r) => !r.aiAnalysis);
+      const repos = await db.getRepositories(userId);
+      const unanalyzedRepos = repos.filter(r => !r.isExcluded && !r.aiAnalysis);
       if (unanalyzedRepos.length > 0) {
         return {
           satisfied: false,
@@ -264,10 +187,8 @@ export async function verifyStateRequirements(
     }
 
     case 'GROUPING_SUGGESTED': {
-      const projectCount = await prisma.project.count({
-        where: { userId },
-      });
-      if (projectCount === 0) {
+      const projects = await db.getProjects(userId);
+      if (projects.length === 0) {
         return { satisfied: false, missing: 'No project groupings exist' };
       }
       break;
@@ -283,26 +204,6 @@ export async function verifyStateRequirements(
 export async function getCurrentWorkflowState(
   userId: string
 ): Promise<PortfolioWorkflowState | null> {
-  const settings = await prisma.portfolioSettings.findUnique({
-    where: { userId },
-  });
-
-  return settings?.workflowState || null;
-}
-
-/**
- * Get workflow state transition history
- */
-export async function getWorkflowHistory(
-  userId: string
-): Promise<StateTransition[]> {
-  const settings = await prisma.portfolioSettings.findUnique({
-    where: { userId },
-  });
-
-  if (!settings?.stateTransitionLog) {
-    return [];
-  }
-
-  return JSON.parse(settings.stateTransitionLog as string);
+  const settings = await db.getSettings(userId);
+  return (settings?.workflowState as PortfolioWorkflowState) || null;
 }

@@ -1,19 +1,14 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import prisma from '@/lib/db';
 import { redactForLLM } from '@/lib/redaction';
 import { ProjectAnalysisSchema } from '@/lib/analysis-schemas';
+import { db } from '@/lib/storage';
+
+const SINGLE_USER_ID = 'single-user';
 
 export async function POST(request: Request) {
   try {
-    const session = await auth();
-
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const body = await request.json();
     const { projectId } = body ?? {};
 
@@ -25,37 +20,26 @@ export async function POST(request: Request) {
     }
 
     // Fetch project with repositories
-    const project = await prisma.project.findFirst({
-      where: {
-        id: projectId,
-        userId: session.user.id,
-      },
-      include: {
-        repositories: {
-          include: {
-            aiAnalysis: true,
-          },
-        },
-      },
-    });
+    const project = await db.getProjectById(projectId);
 
-    if (!project) {
+    if (!project || project.userId !== SINGLE_USER_ID) {
       return NextResponse.json(
         { error: 'Project not found' },
         { status: 404 }
       );
     }
 
-    if (project.repositories.length === 0) {
+    const repositories = await db.getRepositories(SINGLE_USER_ID);
+    const projectRepos = repositories.filter(r => r.projectId === projectId && !r.isExcluded);
+
+    if (projectRepos.length === 0) {
       return NextResponse.json(
         { error: 'No repositories in this project' },
         { status: 400 }
       );
     }
 
-    const settings = await prisma.portfolioSettings.findUnique({
-      where: { userId: session.user.id },
-    });
+    const settings = await db.getSettings(SINGLE_USER_ID);
 
     const parseJsonArray = (val: string | string[] | null | undefined) => {
       if (!val) return [];
@@ -68,13 +52,13 @@ export async function POST(request: Request) {
     };
 
     // Prepare context for AI analysis
-    const repoContexts = [...project.repositories]
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+    const repoContexts = [...projectRepos]
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
       .map((repo) => ({
       name: repo.name,
       description: repo.description ?? 'No description',
       language: repo.language ?? 'Unknown',
-      topics: parseJsonArray(repo.topics),
+      topics: repo.topics ?? [],
       stars: repo.stargazersCount ?? 0,
       size: repo.size ?? 0,
       readme:
@@ -83,9 +67,9 @@ export async function POST(request: Request) {
           : redactForLLM(repo.readmeContent ?? '', { maxLength: 1500 }),
       languages: repo.languages ?? {},
       analysis: repo.aiAnalysis ? {
-        techStack: parseJsonArray(repo.aiAnalysis.techStack),
-        architecturePatterns: parseJsonArray(repo.aiAnalysis.architecturePatterns),
-        skillsDemonstrated: parseJsonArray(repo.aiAnalysis.skillsDemonstrated),
+        techStack: repo.aiAnalysis.techStack ?? [],
+        architecturePatterns: repo.aiAnalysis.architecturePatterns ?? [],
+        skillsDemonstrated: repo.aiAnalysis.skillsDemonstrated ?? [],
       } : null,
     }));
 
@@ -159,30 +143,16 @@ export async function POST(request: Request) {
           const finalAnalysis = validated.data;
 
           // 4. Save to database
-          await prisma.projectAnalysis.upsert({
-            where: { projectId: project.id },
-            update: {
-              technicalSkills: JSON.stringify(finalAnalysis.technicalSkills ?? []) as any,
-              designDecisions: finalAnalysis.designDecisions,
-              novelApproaches: finalAnalysis.novelApproaches,
-              testingStrategy: finalAnalysis.testingStrategy,
-              problemsSolved: finalAnalysis.problemsSolved,
-              skillDemonstration: finalAnalysis.skillDemonstration,
-              architectureInsights: finalAnalysis.architectureInsights,
-              techStack: JSON.stringify(finalAnalysis.techStack ?? []) as any,
-              updatedAt: new Date(),
-            },
-            create: {
-              projectId: project.id,
-              technicalSkills: JSON.stringify(finalAnalysis.technicalSkills ?? []) as any,
-              designDecisions: finalAnalysis.designDecisions,
-              novelApproaches: finalAnalysis.novelApproaches,
-              testingStrategy: finalAnalysis.testingStrategy,
-              problemsSolved: finalAnalysis.problemsSolved,
-              skillDemonstration: finalAnalysis.skillDemonstration,
-              architectureInsights: finalAnalysis.architectureInsights,
-              techStack: JSON.stringify(finalAnalysis.techStack ?? []) as any,
-            },
+          await db.upsertProjectAnalysis({
+            projectId: project.id,
+            technicalSkills: finalAnalysis.technicalSkills ?? [],
+            designDecisions: finalAnalysis.designDecisions ?? '',
+            novelApproaches: finalAnalysis.novelApproaches ?? '',
+            testingStrategy: finalAnalysis.testingStrategy ?? '',
+            problemsSolved: finalAnalysis.problemsSolved ?? '',
+            skillDemonstration: finalAnalysis.skillDemonstration ?? '',
+            architectureInsights: finalAnalysis.architectureInsights ?? '',
+            techStack: finalAnalysis.techStack ?? [],
           });
 
           // 5. Send "completed" status

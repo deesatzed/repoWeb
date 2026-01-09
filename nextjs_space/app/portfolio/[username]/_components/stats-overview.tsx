@@ -10,7 +10,7 @@ interface StatsOverviewProps {
   repositories: any[];
 }
 
-const COLORS = ['#8B5CF6', '#06B6D4', '#F59E0B', '#EC4899', '#10B981', '#F97316'];
+const COLORS = ['#2563EB', '#0891B2', '#059669', '#D97706', '#DC2626', '#7C3AED'];
 
 export default function StatsOverview({ repositories }: StatsOverviewProps) {
   const stats = useMemo(() => {
@@ -33,12 +33,6 @@ export default function StatsOverview({ repositories }: StatsOverviewProps) {
 
     // AI Analysis stats
     const analyzedRepos = repositories?.filter(repo => repo?.aiAnalysis) ?? [];
-    const avgComplexity = analyzedRepos?.length > 0
-      ? analyzedRepos.reduce((sum, repo) => sum + (repo?.aiAnalysis?.complexityScore ?? 0), 0) / analyzedRepos.length
-      : 0;
-    const avgQuality = analyzedRepos?.length > 0
-      ? analyzedRepos.reduce((sum, repo) => sum + (repo?.aiAnalysis?.codeQualityScore ?? 0), 0) / analyzedRepos.length
-      : 0;
 
     // Project types
     const projectTypes: { [key: string]: number } = {};
@@ -57,8 +51,6 @@ export default function StatsOverview({ repositories }: StatsOverviewProps) {
       totalStars,
       totalForks,
       languageData,
-      avgComplexity: Math.round(avgComplexity),
-      avgQuality: Math.round(avgQuality),
       projectTypeData,
       analyzedCount: analyzedRepos?.length ?? 0,
     };
@@ -73,9 +65,9 @@ export default function StatsOverview({ repositories }: StatsOverviewProps) {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.4 }}
         >
-          <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-6 hover:border-purple-500/50 transition-all">
+          <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-6 hover:border-blue-600/50 transition-all">
             <div className="flex items-center justify-between mb-2">
-              <Package className="w-8 h-8 text-purple-400" />
+              <Package className="w-8 h-8 text-blue-500" />
             </div>
             <p className="text-3xl font-bold text-white">{stats.totalRepos}</p>
             <p className="text-sm text-slate-400">Repositories</p>
@@ -87,9 +79,9 @@ export default function StatsOverview({ repositories }: StatsOverviewProps) {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.4, delay: 0.1 }}
         >
-          <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-6 hover:border-cyan-500/50 transition-all">
+          <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-6 hover:border-blue-600/50 transition-all">
             <div className="flex items-center justify-between mb-2">
-              <Star className="w-8 h-8 text-cyan-400" />
+              <Star className="w-8 h-8 text-blue-500" />
             </div>
             <p className="text-3xl font-bold text-white">{stats.totalStars}</p>
             <p className="text-sm text-slate-400">Total Stars</p>
@@ -101,9 +93,9 @@ export default function StatsOverview({ repositories }: StatsOverviewProps) {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.4, delay: 0.2 }}
         >
-          <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-6 hover:border-purple-500/50 transition-all">
+          <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-6 hover:border-blue-600/50 transition-all">
             <div className="flex items-center justify-between mb-2">
-              <GitFork className="w-8 h-8 text-purple-400" />
+              <GitFork className="w-8 h-8 text-blue-500" />
             </div>
             <p className="text-3xl font-bold text-white">{stats.totalForks}</p>
             <p className="text-sm text-slate-400">Total Forks</p>
@@ -115,9 +107,9 @@ export default function StatsOverview({ repositories }: StatsOverviewProps) {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.4, delay: 0.3 }}
         >
-          <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-6 hover:border-cyan-500/50 transition-all">
+          <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-6 hover:border-blue-600/50 transition-all">
             <div className="flex items-center justify-between mb-2">
-              <Code2 className="w-8 h-8 text-cyan-400" />
+              <Code2 className="w-8 h-8 text-blue-500" />
             </div>
             <p className="text-3xl font-bold text-white">{stats?.languageData?.length ?? 0}</p>
             <p className="text-sm text-slate-400">Languages</p>
@@ -157,14 +149,14 @@ export default function StatsOverview({ repositories }: StatsOverviewProps) {
                       fontSize: 11
                     }}
                   />
-                  <Bar dataKey="value" fill="#8B5CF6" radius={[8, 8, 0, 0]} />
+                  <Bar dataKey="value" fill="#2563EB" radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </Card>
           </motion.div>
         )}
 
-        {/* AI Analysis Scores */}
+        {/* Projects Analyzed */}
         {stats.analyzedCount > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -172,44 +164,14 @@ export default function StatsOverview({ repositories }: StatsOverviewProps) {
             transition={{ duration: 0.6, delay: 0.5 }}
           >
             <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">AI Analysis Overview</h3>
-              <div className="space-y-6">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-slate-400">Avg Complexity Score</span>
-                    <span className="text-lg font-bold text-white">{stats.avgComplexity}/100</span>
-                  </div>
-                  <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                    <motion.div
-                      className="h-full bg-gradient-to-r from-purple-500 to-cyan-500"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${stats.avgComplexity}%` }}
-                      transition={{ duration: 1, delay: 0.6 }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-slate-400">Avg Code Quality Score</span>
-                    <span className="text-lg font-bold text-white">{stats.avgQuality}/100</span>
-                  </div>
-                  <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
-                    <motion.div
-                      className="h-full bg-gradient-to-r from-cyan-500 to-purple-500"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${stats.avgQuality}%` }}
-                      transition={{ duration: 1, delay: 0.7 }}
-                    />
-                  </div>
-                </div>
-
-                <div className="pt-2">
-                  <p className="text-sm text-slate-400 mb-2">Projects Analyzed</p>
-                  <p className="text-2xl font-bold text-white">
-                    {stats.analyzedCount} / {stats.totalRepos}
-                  </p>
-                </div>
+              <h3 className="text-lg font-semibold text-white mb-4">Portfolio Coverage</h3>
+              <div className="text-center py-4">
+                <p className="text-4xl font-bold text-white mb-2">
+                  {stats.analyzedCount}
+                </p>
+                <p className="text-sm text-slate-400">
+                  Projects with detailed analysis
+                </p>
               </div>
             </Card>
           </motion.div>

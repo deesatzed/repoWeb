@@ -93,11 +93,12 @@ export class GitHubService {
     }
   }
 
-  async getUserRepositories(username: string): Promise<GitHubRepo[]> {
+  async getUserRepositories(username: string, maxRepos?: number): Promise<GitHubRepo[]> {
     try {
       const repos: GitHubRepo[] = [];
       let page = 1;
       const perPage = 100;
+      const limit = maxRepos && maxRepos > 0 ? Math.floor(maxRepos) : undefined;
 
       while (true) {
         const { data } = await this.octokit.repos.listForAuthenticatedUser({
@@ -109,6 +110,9 @@ export class GitHubService {
 
         if (data?.length === 0) break;
         repos.push(...(data as GitHubRepo[]));
+        if (limit && repos.length >= limit) {
+          return repos.slice(0, limit);
+        }
         if (data?.length < perPage) break;
         page++;
       }

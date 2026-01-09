@@ -1,105 +1,54 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
-import prisma from '@/lib/db';
+import { db } from '@/lib/storage';
+
+const SINGLE_USER_ID = 'single-user';
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const { name, description, repositoryIds, isVisible } = await req.json();
     const { projectId } = await params;
 
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      include: { githubConnection: true },
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
     // Verify project ownership
-    const existingProject = await prisma.project.findFirst({
-      where: {
-        id: projectId,
-        userId: user.id,
-      },
-    });
-
-    if (!existingProject) {
+    const existingProject = await db.getProjectById(projectId);
+    if (!existingProject || existingProject.userId !== SINGLE_USER_ID) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
     // Update project
-    const project = await prisma.project.update({
-      where: { id: projectId },
-      data: {
-        ...(name !== undefined && { name }),
-        ...(description !== undefined && { description }),
-        ...(isVisible !== undefined && { isVisible }),
-      },
+    const project = await db.updateProject(projectId, {
+      ...(name !== undefined && { name }),
+      ...(description !== undefined && { description }),
+      ...(isVisible !== undefined && { isVisible }),
     });
 
     // Update repository associations if provided
     if (repositoryIds !== undefined) {
+      const repositories = await db.getRepositories(SINGLE_USER_ID);
+      
       // Remove all existing associations
-      await prisma.repository.updateMany({
-        where: { projectId: projectId },
-        data: { projectId: null },
-      });
+      for (const repo of repositories) {
+        if (repo.projectId === projectId) {
+          await db.updateRepository(repo.id, { projectId: undefined });
+        }
+      }
 
       // Add new associations
-      if (repositoryIds.length > 0) {
-        await prisma.repository.updateMany({
-          where: {
-            id: { in: repositoryIds },
-            githubConnectionId: user.githubConnection?.id,
-          },
-          data: { projectId: projectId },
-        });
+      for (const repoId of repositoryIds) {
+        await db.updateRepository(repoId, { projectId });
       }
     }
 
     // Fetch updated project with repositories
-    const updatedProject = await prisma.project.findUnique({
-      where: { id: projectId },
-      include: {
-        repositories: true,
-        aiAnalysis: true,
-      },
-    });
-
-    const parseJsonArray = (val: string | string[] | null | undefined) => {
-      if (!val) return [];
-      if (Array.isArray(val)) return val;
-      try {
-        return JSON.parse(val || '[]');
-      } catch {
-        return [];
-      }
+    const updatedRepositories = await db.getRepositories(SINGLE_USER_ID);
+    const updatedProject = {
+      ...project,
+      repositories: updatedRepositories.filter(r => r.projectId === projectId),
     };
 
-    const serializedProject = updatedProject ? {
-      ...updatedProject,
-      repositories: updatedProject.repositories.map((repo: any) => ({
-        ...repo,
-        githubId: repo.githubId.toString(),
-        topics: parseJsonArray(repo.topics),
-      })),
-      aiAnalysis: updatedProject.aiAnalysis ? {
-        ...updatedProject.aiAnalysis,
-        technicalSkills: parseJsonArray(updatedProject.aiAnalysis.technicalSkills),
-        techStack: parseJsonArray(updatedProject.aiAnalysis.techStack),
-      } : null,
-    } : null;
-
-    return NextResponse.json({ project: serializedProject });
+    return NextResponse.json({ project: updatedProject });
   } catch (error) {
     console.error('Error updating project:', error);
     return NextResponse.json(
@@ -114,37 +63,16 @@ export async function DELETE(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const { projectId } = await params;
 
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
-
     // Verify project ownership
-    const existingProject = await prisma.project.findFirst({
-      where: {
-        id: projectId,
-        userId: user.id,
-      },
-    });
-
-    if (!existingProject) {
+    const existingProject = await db.getProjectById(projectId);
+    if (!existingProject || existingProject.userId !== SINGLE_USER_ID) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
-    // Delete project (repositories will be unlinked due to SetNull)
-    await prisma.project.delete({
-      where: { id: projectId },
-    });
+    // Delete project (repositories will be unlinked)
+    await db.deleteProject(projectId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -1,0 +1,16 @@
+{
+  "users": [],
+  "githubConnections": [],
+  "repositories": [],
+  "projects": [],
+  "settings": [
+    {
+      "userId": "single-user",
+      "hidePrivateRepoNames": false
+    }
+  ],
+  "workflowStates": [],
+  "projectAnalyses": [],
+  "codeAssets": [],
+  "codeAssetOccurrences": []
+}

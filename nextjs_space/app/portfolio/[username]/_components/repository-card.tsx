@@ -22,8 +22,8 @@ export default function RepositoryCard({ repository, featured = false }: Reposit
 
   return (
     <Card 
-      className={`bg-slate-800/50 backdrop-blur-sm border-slate-700 p-6 h-full hover:border-purple-500/50 transition-all ${
-        featured ? 'border-purple-500/30' : ''
+      className={`bg-slate-800/50 backdrop-blur-sm border-slate-700 p-6 h-full hover:border-blue-600/50 transition-all ${
+        featured ? 'border-blue-600/30' : ''
       }`}
     >
       <div className="flex flex-col h-full">
@@ -36,7 +36,7 @@ export default function RepositoryCard({ repository, featured = false }: Reposit
               </h3>
             </div>
             {featured && (
-              <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/50 flex-shrink-0">
+              <Badge className="bg-blue-600/20 text-blue-300 border-blue-600/50 flex-shrink-0">
                 <TrendingUp className="w-3 h-3 mr-1" />
                 Featured
               </Badge>
@@ -72,138 +72,95 @@ export default function RepositoryCard({ repository, featured = false }: Reposit
           </div>
         </div>
 
-        {/* AI Analysis - Skills Focused */}
+        {/* AI Analysis - Accomplishment Focused */}
         {hasAnalysis && (
           <div className="flex-1 space-y-4">
-            <div className="p-4 rounded-lg bg-purple-500/5 border border-purple-500/20">
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-4 h-4 text-purple-400" />
-                <span className="text-sm font-semibold text-purple-300">Technical Capabilities</span>
-              </div>
+            {/* Project Type Badge */}
+            {repository?.aiAnalysis?.projectType && (
+              <Badge variant="outline" className="border-blue-500/50 text-blue-300">
+                {repository.aiAnalysis.projectType}
+              </Badge>
+            )}
 
-              {/* Technical Sophistication Indicators */}
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                {repository?.aiAnalysis?.complexityScore !== undefined && (
-                  <div>
-                    <p className="text-xs text-slate-500 mb-1">Technical Depth</p>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                        <motion.div
-                          className="h-full bg-gradient-to-r from-purple-500 to-cyan-500"
-                          initial={{ width: 0 }}
-                          whileInView={{ width: `${repository.aiAnalysis.complexityScore}%` }}
-                          viewport={{ once: true }}
-                          transition={{ duration: 0.8 }}
-                        />
-                      </div>
-                      <span className="text-sm font-semibold text-white">
-                        {repository.aiAnalysis.complexityScore}
-                      </span>
-                    </div>
-                  </div>
-                )}
+            {/* Summary - What it does */}
+            {repository?.aiAnalysis?.summary && (
+              <p className="text-sm text-slate-300 leading-relaxed">
+                {repository.aiAnalysis.summary}
+              </p>
+            )}
 
-                {repository?.aiAnalysis?.codeQualityScore !== undefined && (
-                  <div>
-                    <p className="text-xs text-slate-500 mb-1">Engineering Practices</p>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                        <motion.div
-                          className="h-full bg-gradient-to-r from-cyan-500 to-purple-500"
-                          initial={{ width: 0 }}
-                          whileInView={{ width: `${repository.aiAnalysis.codeQualityScore}%` }}
-                          viewport={{ once: true }}
-                          transition={{ duration: 0.8, delay: 0.1 }}
-                        />
-                      </div>
-                      <span className="text-sm font-semibold text-white">
-                        {repository.aiAnalysis.codeQualityScore}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Key Features - Detailed */}
-              {repository?.aiAnalysis?.keyFeatures?.length > 0 && (
-                <div className="mb-4 space-y-2">
-                  <p className="text-xs text-slate-500 font-medium">Key Features</p>
-                  <ul className="space-y-1">
-                    {repository.aiAnalysis.keyFeatures.slice(0, 4).map((feature: string, idx: number) => (
-                      <li key={idx} className="text-sm text-slate-300 flex items-start gap-2">
-                        <span className="w-1 h-1 rounded-full bg-cyan-500 mt-2 flex-shrink-0" />
-                        <span>{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* What This Demonstrates - KEY SECTION */}
-              {repository?.aiAnalysis?.employerHighlights && (
-                <div className="mb-3 p-3 bg-slate-900/50 rounded border border-slate-700">
-                  <p className="text-xs text-purple-400 font-semibold mb-1 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" />
-                    Skills Demonstrated:
-                  </p>
-                  <p className="text-sm text-slate-200 leading-relaxed">
-                    {repository.aiAnalysis.employerHighlights}
-                  </p>
-                </div>
-              )}
-
-              {/* Technical Skills */}
-              {repository?.aiAnalysis?.skillsDemonstrated?.length > 0 && (
-                <div className="mb-3">
-                  <p className="text-xs text-slate-500 mb-2">Technical Competencies:</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {repository.aiAnalysis.skillsDemonstrated.map((skill: string, idx: number) => (
-                      <Badge 
-                        key={idx} 
-                        variant="secondary" 
-                        className="bg-purple-500/10 text-purple-200 border-purple-500/20 text-xs"
-                      >
-                        {skill}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Architecture */}
-              {repository?.aiAnalysis?.architecturePatterns?.length > 0 && (
-                <div>
-                  <p className="text-xs text-slate-500 mb-2">Design Patterns Used:</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {repository.aiAnalysis.architecturePatterns.map((pattern: string, idx: number) => (
-                      <Badge 
-                        key={idx} 
-                        variant="outline" 
-                        className="border-cyan-500/30 text-cyan-300 text-xs"
-                      >
-                        {pattern}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Tech Stack */}
+            {/* Tech Stack - Prominent */}
             {repository?.aiAnalysis?.techStack?.length > 0 && (
               <div>
-                <p className="text-xs text-slate-500 mb-2">Technology Stack:</p>
+                <p className="text-xs text-slate-500 mb-2 font-medium">Built With</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {repository.aiAnalysis.techStack.slice(0, 6).map((tech: string, idx: number) => (
+                  {repository.aiAnalysis.techStack.map((tech: string, idx: number) => (
                     <Badge 
                       key={idx} 
-                      variant="outline" 
-                      className="border-slate-600 text-slate-300 text-xs"
+                      className="bg-blue-600/20 text-blue-200 border-blue-600/30 text-xs"
                     >
                       {tech}
                     </Badge>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Skills Demonstrated */}
+            {repository?.aiAnalysis?.skillsDemonstrated?.length > 0 && (
+              <div>
+                <p className="text-xs text-slate-500 mb-2 font-medium">Skills Demonstrated</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {repository.aiAnalysis.skillsDemonstrated.map((skill: string, idx: number) => (
+                    <Badge 
+                      key={idx} 
+                      variant="outline" 
+                      className="border-slate-600 text-slate-300 text-xs"
+                    >
+                      {skill}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Key Results - Metrics & Outcomes */}
+            {repository?.aiAnalysis?.keyResults?.length > 0 && (
+              <div className="p-3 bg-green-500/5 rounded border border-green-500/20">
+                <p className="text-xs text-green-400 font-medium mb-2">Key Results</p>
+                <ul className="space-y-1">
+                  {repository.aiAnalysis.keyResults.map((result: string, idx: number) => (
+                    <li key={idx} className="text-sm text-slate-300 flex items-start gap-2">
+                      <TrendingUp className="w-3 h-3 text-green-500 mt-0.5 flex-shrink-0" />
+                      <span>{result}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Novel Approaches / Technical Highlights */}
+            {repository?.aiAnalysis?.novelApproaches && (
+              <div className="p-3 bg-slate-900/50 rounded border border-slate-700">
+                <p className="text-xs text-blue-400 font-medium mb-1">Technical Approach</p>
+                <p className="text-sm text-slate-300 leading-relaxed">
+                  {repository.aiAnalysis.novelApproaches}
+                </p>
+              </div>
+            )}
+
+            {/* Key Features */}
+            {repository?.aiAnalysis?.keyFeatures?.length > 0 && (
+              <div>
+                <p className="text-xs text-slate-500 mb-2 font-medium">Key Features</p>
+                <ul className="space-y-1">
+                  {repository.aiAnalysis.keyFeatures.slice(0, 4).map((feature: string, idx: number) => (
+                    <li key={idx} className="text-sm text-slate-400 flex items-start gap-2">
+                      <CheckCircle2 className="w-3 h-3 text-green-500 mt-0.5 flex-shrink-0" />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </div>

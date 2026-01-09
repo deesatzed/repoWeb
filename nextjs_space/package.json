@@ -6,7 +6,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --import tsx --test tests/*.test.ts"
+    "test": "node --import tsx --test tests/*.test.ts",
+    "dev:flow": "tsx scripts/dev-flow.ts",
+    "portfolio:sync": "tsx scripts/portfolio-cli.ts sync",
+    "portfolio:analyze": "tsx scripts/portfolio-cli.ts analyze",
+    "portfolio:build": "tsx scripts/portfolio-cli.ts build",
+    "portfolio:all": "tsx scripts/portfolio-cli.ts all"
   },
   "prisma": {
     "seed": "tsx --require dotenv/config scripts/seed.ts"
