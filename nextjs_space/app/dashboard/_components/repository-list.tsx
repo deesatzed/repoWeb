@@ -670,15 +670,7 @@ export default function RepositoryList({
           {selectedRepos.size > 0 && (
             <>
               <span className="text-sm text-slate-400">({selectedRepos.size} selected)</span>
-              <Select value={selectedProjectId ?? ''} onValueChange={(value) => {
-                if (value === 'create-new') {
-                  setIsCreateProjectDialogOpen(true);
-                } else if (value === 'none') {
-                  setSelectedProjectId(null);
-                } else {
-                  setSelectedProjectId(value);
-                }
-              }}>
+              <Select value={selectedProjectId ?? ''} onValueChange={(value) => setSelectedProjectId(value === 'none' ? null : value)}>
                 <SelectTrigger className="w-[180px] h-8 border-blue-600/50 text-blue-300 hover:bg-blue-600/10">
                   <SelectValue placeholder="Move to group..." />
                 </SelectTrigger>
@@ -697,15 +689,9 @@ export default function RepositoryList({
                       </div>
                     </SelectItem>
                   ))}
-                  <SelectItem value="create-new">
-                    <div className="flex items-center gap-2">
-                      <FolderPlus className="h-3 w-3" />
-                      Create New Group...
-                    </div>
-                  </SelectItem>
                 </SelectContent>
               </Select>
-              {selectedProjectId && selectedProjectId !== 'create-new' && (
+              {selectedProjectId && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -716,6 +702,15 @@ export default function RepositoryList({
                   Move
                 </Button>
               )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setIsCreateProjectDialogOpen(true)}
+                className="border-blue-600/50 text-blue-300 hover:bg-blue-600/10 h-8"
+              >
+                <FolderPlus className="h-3 w-3 mr-1" />
+                Create New Group
+              </Button>
               <Button
                 size="sm"
                 variant="outline"
