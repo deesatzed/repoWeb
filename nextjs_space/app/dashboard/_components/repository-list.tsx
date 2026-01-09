@@ -547,7 +547,7 @@ export default function RepositoryList({
 
       const data = await response.json();
 
-      if (data.success) {
+      if (response.ok && data.project) {
         toast.success('Project created successfully');
         setIsCreateProjectDialogOpen(false);
         setNewProjectName('');
