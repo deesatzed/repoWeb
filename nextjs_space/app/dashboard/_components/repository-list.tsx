@@ -120,14 +120,6 @@ export default function RepositoryList({
     fetchProjects();
   }, []);
 
-  // Open create project dialog when 'create-new' is selected
-  useEffect(() => {
-    if (selectedProjectId === 'create-new') {
-      setIsCreateProjectDialogOpen(true);
-      setSelectedProjectId(null);
-    }
-  }, [selectedProjectId]);
-
   useEffect(() => {
     console.log('AutoTrigger check:', { autoTrigger, loading, repoCount: repositories.length, hasBulkProgress: !!bulkProgress });
     
@@ -678,7 +670,15 @@ export default function RepositoryList({
           {selectedRepos.size > 0 && (
             <>
               <span className="text-sm text-slate-400">({selectedRepos.size} selected)</span>
-              <Select value={selectedProjectId ?? ''} onValueChange={(value) => setSelectedProjectId(value === 'none' ? null : value)}>
+              <Select value={selectedProjectId ?? ''} onValueChange={(value) => {
+                if (value === 'create-new') {
+                  setIsCreateProjectDialogOpen(true);
+                } else if (value === 'none') {
+                  setSelectedProjectId(null);
+                } else {
+                  setSelectedProjectId(value);
+                }
+              }}>
                 <SelectTrigger className="w-[180px] h-8 border-blue-600/50 text-blue-300 hover:bg-blue-600/10">
                   <SelectValue placeholder="Move to group..." />
                 </SelectTrigger>
