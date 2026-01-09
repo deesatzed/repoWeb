@@ -14,7 +14,8 @@ import {
   Check,
   Stars,
   ExternalLink,
-  FolderPlus
+  FolderPlus,
+  ArrowDown
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -201,29 +202,29 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
       </header>
 
       {/* Hero Section */}
-      <section className="py-16 px-6">
+      <section className="py-10 md:py-12 px-6">
         <div className="max-w-7xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
-            className="text-center mb-12"
+            className="text-center mb-8"
           >
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-600/10 border border-blue-600/20 mb-6">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-600/10 border border-blue-600/20 mb-4">
               <Briefcase className="w-4 h-4 text-blue-500" />
               <span className="text-sm text-blue-300">Developer Portfolio</span>
             </div>
-            <h1 className="text-5xl font-bold mb-4 text-white">
+            <h1 className="text-4xl md:text-5xl font-bold mb-3 text-white">
               GitHub Repositories of {githubUsername}
             </h1>
-            <p className="text-xl text-slate-300 max-w-2xl mx-auto mb-6">
+            <p className="text-lg md:text-xl text-slate-300 max-w-2xl mx-auto mb-4">
               Technical skills and engineering capabilities demonstrated through real projects
             </p>
             <a
               href={`https://github.com/${githubUsername}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors mb-8"
+              className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors mb-6"
             >
               <Github className="w-5 h-5" />
               <span className="text-sm">View on GitHub</span>
@@ -231,7 +232,7 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
             </a>
 
             {targetRoles?.length > 0 && (
-              <div className="flex flex-wrap justify-center gap-3 mb-8">
+              <div className="flex flex-wrap justify-center gap-2.5 mb-6">
                 {targetRoles.map((role) => (
                   <span
                     key={role}
@@ -243,6 +244,42 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
                 ))}
               </div>
             )}
+
+            <div className="flex flex-wrap items-center justify-center gap-2 mb-6">
+              <span className="text-xs text-slate-400">Jump to:</span>
+              <button
+                type="button"
+                onClick={() => document.getElementById('competencies')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="text-xs text-blue-300 hover:text-blue-200 underline-offset-4 hover:underline"
+              >
+                Competencies
+              </button>
+              <span className="text-xs text-slate-600">/</span>
+              <button
+                type="button"
+                onClick={() => document.getElementById('tech-stack')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="text-xs text-blue-300 hover:text-blue-200 underline-offset-4 hover:underline"
+              >
+                Tech Stack
+              </button>
+              <span className="text-xs text-slate-600">/</span>
+              <button
+                type="button"
+                onClick={() => document.getElementById('project-categories')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="text-xs text-blue-300 hover:text-blue-200 underline-offset-4 hover:underline"
+              >
+                Projects
+              </button>
+              <span className="text-xs text-slate-600">/</span>
+              <button
+                type="button"
+                onClick={() => document.getElementById('competencies')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="inline-flex items-center gap-1 text-xs text-slate-300 hover:text-slate-200"
+              >
+                <ArrowDown className="w-4 h-4" />
+                Scroll
+              </button>
+            </div>
             
               {/* Quick Stats - Centered Grid based on available items */}
               <div className={`grid gap-6 max-w-4xl mx-auto ${
@@ -294,6 +331,7 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
           {/* Technical Skills Overview */}
           {aggregateSkills?.skills?.length > 0 && (
             <motion.div
+              id="competencies"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.4 }}
@@ -319,6 +357,7 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
           {/* Tech Stack */}
           {aggregateSkills?.techStack?.length > 0 && (
             <motion.div
+              id="tech-stack"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.5 }}
@@ -410,7 +449,7 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
 
       {/* Grouped Repository Sections */}
       {Object.keys(groupedRepos).length > 0 && (
-        <section className="py-12 px-6">
+        <section id="project-categories" className="py-12 px-6">
           <div className="max-w-7xl mx-auto">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -425,7 +464,9 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
                 Repositories organized by project and category
               </p>
 
-              {Object.entries(groupedRepos).map(([groupName, repos], groupIndex) => (
+              {Object.entries(groupedRepos)
+                .sort(([a], [b]) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+                .map(([groupName, repos], groupIndex) => (
                 <motion.div
                   key={groupName}
                   initial={{ opacity: 0, y: 20 }}
