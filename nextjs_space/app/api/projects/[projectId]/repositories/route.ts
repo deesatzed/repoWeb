@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/storage';
+import { auth } from '@/lib/auth';
 
 const SINGLE_USER_ID = 'single-user';
 
@@ -8,6 +9,11 @@ export async function POST(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { repositoryId } = await req.json();
     const { projectId } = await params;
 
@@ -46,6 +52,11 @@ export async function DELETE(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
+    const session = await auth();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const repositoryId = searchParams.get('repositoryId');
     const { projectId } = await params;

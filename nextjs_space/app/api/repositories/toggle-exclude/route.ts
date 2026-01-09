@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/storage';
+import { auth } from '@/lib/auth';
 
 const SINGLE_USER_ID = 'single-user';
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await auth();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { repositoryId, isExcluded } = await req.json();
 
     if (!repositoryId) {

@@ -5,6 +5,7 @@ import { RepositoryAnalysisSchema } from '@/lib/analysis-schemas';
 import { analyzeJSON } from '@/lib/llm';
 import { GitHubService } from '@/lib/github-api';
 import { decrypt } from '@/lib/encryption';
+import { auth } from '@/lib/auth';
 
 const SINGLE_USER_ID = 'single-user';
 
@@ -12,6 +13,11 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
+    const session = await auth();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { repositoryId } = body ?? {};
 

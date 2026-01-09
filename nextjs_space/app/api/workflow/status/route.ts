@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/storage';
+import { auth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +12,11 @@ const SINGLE_USER_ID = 'single-user';
  */
 export async function GET(request: Request) {
   try {
+    const session = await auth();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const [repositories, githubConnection] = await Promise.all([
       db.getRepositories(SINGLE_USER_ID),
       db.getGitHubConnection(SINGLE_USER_ID),
@@ -84,5 +90,10 @@ export async function GET(request: Request) {
  * POST /api/workflow/status - No-op for simplified workflow
  */
 export async function POST(request: Request) {
+  const session = await auth();
+  if (!session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   return NextResponse.json({ success: true, message: 'Workflow simplified - no manual transitions needed' });
 }

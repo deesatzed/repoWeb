@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/storage';
 import { analyzeJSON } from '@/lib/llm';
 import { z } from 'zod';
+import { auth } from '@/lib/auth';
 
 const SINGLE_USER_ID = 'single-user';
 
@@ -21,6 +22,11 @@ const AutoCurateSchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    const session = await auth();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     // Require explicit user intent to prevent accidental auto-runs
     const body = await request.json().catch(() => ({}));
     if (body?.intent !== 'manual') {

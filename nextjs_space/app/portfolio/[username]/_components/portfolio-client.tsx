@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import {
   Github,
@@ -28,6 +29,7 @@ interface PortfolioClientProps {
 
 export default function PortfolioClient({ data }: PortfolioClientProps) {
   const [copied, setCopied] = useState(false);
+  const { data: session } = useSession();
   
   const projects = data?.projects ?? [];
   const repositories = data?.repositories ?? [];
@@ -181,11 +183,13 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
                   </>
                 )}
               </Button>
-              <Link href="/dashboard">
-                <Button variant="outline" className="border-slate-600 text-slate-200 hover:bg-slate-800">
-                  Edit Portfolio
-                </Button>
-              </Link>
+              {session && (
+                <Link href="/dashboard">
+                  <Button variant="outline" className="border-slate-600 text-slate-200 hover:bg-slate-800">
+                    Edit Portfolio
+                  </Button>
+                </Link>
+              )}
               <Link href="/auth/signin">
                 <Button className="bg-blue-600 hover:bg-blue-700">
                   Create Your Portfolio

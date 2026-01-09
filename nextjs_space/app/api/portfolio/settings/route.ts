@@ -2,11 +2,17 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/storage';
+import { auth } from '@/lib/auth';
 
 const SINGLE_USER_ID = 'single-user';
 
 export async function GET(request: Request) {
   try {
+    const session = await auth();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const settings = await db.getSettings(SINGLE_USER_ID);
 
     if (!settings) {
@@ -30,6 +36,11 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const session = await auth();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const updates = body ?? {};
 
