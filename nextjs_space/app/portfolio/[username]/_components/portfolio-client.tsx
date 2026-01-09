@@ -59,6 +59,10 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
     return { groupedRepos: grouped, ungroupedRepos: ungrouped, allRepos: all };
   }, [projects, repositories]);
 
+  const technicalWorksCount = useMemo(() => {
+    return allRepos.filter((r: any) => !r?.isExcluded).length;
+  }, [allRepos]);
+
   // Calculate aggregate skills across all projects and repositories
   const aggregateSkills = useMemo(() => {
     const skillsSet = new Set<string>();
@@ -81,8 +85,9 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
       }
     });
     
-    // From individual repositories
-    repositories?.forEach((repo: any) => {
+    // From repositories
+    allRepos?.forEach((repo: any) => {
+      if (repo?.isExcluded) return;
       const analysis = repo?.aiAnalysis;
       if (Array.isArray(analysis?.skillsDemonstrated)) {
         analysis.skillsDemonstrated.forEach((skill: string) => {
@@ -103,7 +108,7 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
       skills: Array.from(skillsSet).slice(0, 12),
       techStack: Array.from(techStackSet).slice(0, 15),
     };
-  }, [projects, repositories]);
+  }, [projects, allRepos]);
 
   const targetRoles = useMemo(() => {
     const stack = new Set(aggregateSkills.techStack.map((t: string) => t.toLowerCase()));
@@ -262,7 +267,7 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
               >
                 <div className="flex items-center justify-center gap-3 mb-2">
                   <Code2 className="w-6 h-6 text-cyan-400" />
-                  <span className="text-3xl font-bold text-white">{repositories?.length ?? 0}</span>
+                  <span className="text-3xl font-bold text-white">{technicalWorksCount ?? 0}</span>
                 </div>
                 <p className="text-slate-400">Technical Works</p>
               </motion.div>
