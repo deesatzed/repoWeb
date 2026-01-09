@@ -36,13 +36,13 @@ async function main() {
   if (user?.githubConnection) {
     const repos = user.githubConnection.repositories;
     console.log(`Total repos for ${username}: ${repos.length}`);
-    const publicRepos = repos.filter(r => !r.isPrivate);
+    const publicRepos = repos.filter((r: any) => !r.isPrivate);
     console.log(`Public repos: ${publicRepos.length}`);
-    const privateRepos = repos.filter(r => r.isPrivate);
+    const privateRepos = repos.filter((r: any) => r.isPrivate);
     console.log(`Private repos: ${privateRepos.length}`);
     
     // Check if any assets are linked to these repos
-    const repoNames = repos.map(r => r.name);
+    const repoNames = repos.map((r: any) => r.name);
     const linkedAssets = await prisma.codeAssetOccurrence.count({
       where: {
         repoName: { in: repoNames }
