@@ -155,13 +155,13 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800">
       {/* Header */}
       <header className="bg-slate-900/50 backdrop-blur-lg border-b border-slate-800 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4">
+        <div className="max-w-7xl mx-auto px-6 py-3">
           <div className="flex items-center justify-between">
             <Link href="/dashboard" className="flex items-center gap-2">
-              <div className="bg-gradient-to-br from-blue-600 to-blue-400 p-2 rounded-lg">
-                <Code2 className="w-5 h-5 text-white" />
+              <div className="bg-gradient-to-br from-blue-600 to-blue-400 p-1.5 rounded-lg">
+                <Code2 className="w-4 h-4 text-white" />
               </div>
-              <span className="text-2xl font-bold text-white">
+              <span className="text-xl font-bold text-white">
                 RepoNexus
               </span>
             </Link>
@@ -170,7 +170,7 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
                 variant="outline" 
                 size="sm"
                 onClick={handleCopyUrl}
-                className="border-slate-600 text-slate-200 hover:bg-slate-800"
+                className="border-slate-600 text-slate-200 hover:bg-slate-800 h-8 px-3 text-xs"
               >
                 {copied ? (
                   <>
@@ -186,13 +186,13 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
               </Button>
               {session && (
                 <Link href="/dashboard">
-                  <Button variant="outline" className="border-slate-600 text-slate-200 hover:bg-slate-800">
+                  <Button variant="outline" size="sm" className="border-slate-600 text-slate-200 hover:bg-slate-800 h-8 px-3 text-xs">
                     Edit Portfolio
                   </Button>
                 </Link>
               )}
               <Link href="/auth/signin">
-                <Button className="bg-blue-600 hover:bg-blue-700">
+                <Button size="sm" className="bg-blue-600 hover:bg-blue-700 h-8 px-3 text-xs">
                   Create Your Portfolio
                 </Button>
               </Link>
@@ -220,30 +220,32 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
             <p className="text-lg md:text-xl text-slate-300 max-w-2xl mx-auto mb-4">
               Technical skills and engineering capabilities demonstrated through real projects
             </p>
-            <a
-              href={`https://github.com/${githubUsername}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors mb-6"
-            >
-              <Github className="w-5 h-5" />
-              <span className="text-sm">View on GitHub</span>
-              <ExternalLink className="w-4 h-4" />
-            </a>
+            <div className="flex flex-wrap items-center justify-center gap-2 mb-6">
+              <a
+                href={`https://github.com/${githubUsername}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                <Github className="w-4 h-4" />
+                <span className="text-sm">View on GitHub</span>
+                <ExternalLink className="w-4 h-4" />
+              </a>
 
-            {targetRoles?.length > 0 && (
-              <div className="flex flex-wrap justify-center gap-2.5 mb-6">
-                {targetRoles.map((role) => (
-                  <span
-                    key={role}
-                    className="px-3 py-1.5 rounded-full bg-slate-800/70 border border-slate-700 text-slate-200 text-sm flex items-center gap-2"
-                  >
-                    <Stars className="w-4 h-4 text-amber-400" />
-                    {role}
-                  </span>
-                ))}
-              </div>
-            )}
+              {targetRoles?.length > 0 && (
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {targetRoles.map((role) => (
+                    <span
+                      key={role}
+                      className="px-2.5 py-1 rounded-full bg-slate-800/70 border border-slate-700 text-slate-200 text-xs flex items-center gap-1.5"
+                    >
+                      <Stars className="w-3.5 h-3.5 text-amber-400" />
+                      {role}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div className="flex flex-wrap items-center justify-center gap-2 mb-6">
               <span className="text-xs text-slate-400">Jump to:</span>
