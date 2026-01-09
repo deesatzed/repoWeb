@@ -8,7 +8,7 @@ async function main() {
     include: { githubConnection: true }
   });
   console.log('Users found:', users.length);
-  users.forEach(u => {
+  users.forEach((u: any) => {
     console.log(`- User: ${u.name} (${u.email})`);
     console.log(`  GitHub: ${u.githubConnection?.githubUsername || 'Not connected'}`);
   });
