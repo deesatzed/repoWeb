@@ -214,7 +214,7 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
               <Briefcase className="w-4 h-4 text-blue-500" />
               <span className="text-sm text-blue-300">Developer Portfolio</span>
             </div>
-            <h1 className="text-4xl md:text-5xl font-bold mb-3 text-white">
+            <h1 className="text-3xl md:text-4xl font-bold mb-3 text-white">
               GitHub Repositories of {githubUsername}
             </h1>
             <p className="text-lg md:text-xl text-slate-300 max-w-2xl mx-auto mb-4">
@@ -458,14 +458,6 @@ export default function PortfolioClient({ data }: PortfolioClientProps) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
             >
-              <div className="flex items-center gap-3 mb-8">
-                <FolderPlus className="w-7 h-7 text-blue-500" />
-                <h2 className="text-4xl font-bold text-white">Project Categories</h2>
-              </div>
-              <p className="text-slate-300 mb-8 text-lg">
-                Repositories organized by project and category
-              </p>
-
               {Object.entries(groupedRepos)
                 .sort(([a], [b]) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
                 .map(([groupName, repos], groupIndex) => (
