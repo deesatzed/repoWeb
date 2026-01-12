@@ -7,10 +7,10 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
   request: Request,
-  { params }: { params: { hash: string } }
+  { params }: { params: Promise<{ hash: string }> }
 ) {
   try {
-    const hash = params.hash;
+    const { hash } = await params;
 
     if (!hash || !hash.startsWith('wp-')) {
       return NextResponse.json(
