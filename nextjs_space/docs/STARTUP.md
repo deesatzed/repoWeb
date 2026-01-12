@@ -80,6 +80,11 @@ After signing in, the dashboard provides:
 - **Curate Portfolio**: Toggle `isExcluded` to hide/show repos, toggle `isFeatured` to highlight
 - **Highlighted Repo's**: Special section showing featured repositories with enriched content
 - **Re-analyze**: Manual re-analysis always runs in deep dive mode for richer insights
+- **Whitepaper Generation**: Generate in-depth technical whitepapers for each repository
+  - Click **Whitepaper** button on repository card to generate both public and protected versions
+  - Public whitepaper downloadable from portfolio (protects proprietary IP)
+  - Protected whitepaper accessible via hash-key URL (full technical depth)
+  - Share protected URL with recruiters/employers for complete access
 
 ## Manual smoke checks
 

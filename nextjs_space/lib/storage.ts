@@ -23,6 +23,7 @@ export interface Repository {
   userId: string;
   name: string;
   fullName: string;
+  displayName?: string | null;
   description?: string;
   language?: string;
   stargazersCount: number;
@@ -44,6 +45,7 @@ export interface Repository {
   languages?: Record<string, number>;
   lastAnalyzedAt?: string;
   aiAnalysis?: {
+    displayTitle?: string;
     projectType?: string;
     summary?: string;
     techStack: string[];
@@ -61,6 +63,73 @@ export interface Repository {
     employerHighlights?: string;
     complexityScore?: number;
     codeQualityScore?: number;
+  };
+  whitepaper?: {
+    title: string;
+    abstract: string;
+    sections: Array<{
+      heading: string;
+      content: string;
+      subsections?: Array<{
+        heading?: string;
+        content: string;
+      }>;
+    }>;
+    technicalSpecs: {
+      architecture: string;
+      designPatterns: string[];
+      keyAlgorithms: string[];
+      dataStructures: string[];
+      performanceCharacteristics?: string;
+      securityConsiderations?: string;
+      scalabilityApproach?: string;
+    };
+    implementationNotes: Array<{
+      topic: string;
+      details: string;
+      codeReferences: string[];
+    }>;
+    tradeoffs: Array<{
+      decision: string;
+      alternatives: string[];
+      rationale: string;
+    }>;
+    generatedAt: string;
+  };
+  whitepaperHash?: string;
+  protectedWhitepaper?: {
+    title: string;
+    abstract: string;
+    sections: Array<{
+      heading: string;
+      content: string;
+      subsections?: Array<{
+        heading?: string;
+        content: string;
+      }>;
+    }>;
+    technicalSpecs: {
+      architecture: string;
+      designPatterns: string[];
+      keyAlgorithms: string[];
+      dataStructures: string[];
+      performanceCharacteristics?: string;
+      securityConsiderations?: string;
+      scalabilityApproach?: string;
+      proprietaryAlgorithms?: string[];
+      businessLogic?: string;
+    };
+    implementationNotes: Array<{
+      topic: string;
+      details: string;
+      codeReferences: string[];
+    }>;
+    tradeoffs: Array<{
+      decision: string;
+      alternatives: string[];
+      rationale: string;
+    }>;
+    generatedAt: string;
   };
 }
 

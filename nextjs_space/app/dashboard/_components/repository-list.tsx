@@ -21,7 +21,8 @@ import {
   Check,
   FolderPlus,
   FolderOpen,
-  ChevronDown
+  ChevronDown,
+  Pencil
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -45,6 +46,7 @@ import { Label } from '@/components/ui/label';
 interface AIAnalysis {
   complexityScore?: number;
   codeQualityScore?: number;
+  displayTitle?: string;
   projectType?: string;
   summary?: string;
   skillsDemonstrated: string[];
@@ -59,6 +61,7 @@ interface AIAnalysis {
 interface Repository {
   id: string;
   name: string;
+  displayName?: string | null;
   description?: string;
   htmlUrl: string;
   language?: string;
@@ -105,14 +108,23 @@ export default function RepositoryList({
   const [cancelled, setCancelled] = useState(false);
   const [repoStatus, setRepoStatus] = useState<Record<string, 'pending' | 'running' | 'completed' | 'failed'>>({});
   const [failedRepos, setFailedRepos] = useState<Set<string>>(new Set());
+  const [bulkApplyingTitles, setBulkApplyingTitles] = useState(false);
 
   const [autoStatus, setAutoStatus] = useState<string | null>(null);
   const [selectedRepos, setSelectedRepos] = useState<Set<string>>(new Set());
   const [selectAll, setSelectAll] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [showHidden, setShowHidden] = useState(false);
   const [isCreateProjectDialogOpen, setIsCreateProjectDialogOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
+
+  const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
+  const [renameRepositoryId, setRenameRepositoryId] = useState<string | null>(null);
+  const [renameRepositoryDefaultName, setRenameRepositoryDefaultName] = useState('');
+  const [renameValue, setRenameValue] = useState('');
+
+  const [generatingWhitepaper, setGeneratingWhitepaper] = useState<string | null>(null);
 
   useEffect(() => {
     console.log('RepositoryList mounted');
@@ -160,6 +172,44 @@ export default function RepositoryList({
     }
   };
 
+  const openRenameDialog = (repo: Repository) => {
+    setRenameRepositoryId(repo.id);
+    setRenameRepositoryDefaultName(repo.name);
+    setRenameValue((repo.displayName ?? '').toString());
+    setIsRenameDialogOpen(true);
+  };
+
+  const handleSaveRename = async () => {
+    if (!renameRepositoryId) return;
+
+    try {
+      const nextDisplayName = renameValue.trim() ? renameValue.trim() : null;
+      const response = await fetch('/api/repositories', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          repositoryId: renameRepositoryId,
+          updates: { displayName: nextDisplayName },
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to rename repository');
+      }
+
+      toast.success('Display name updated');
+      setIsRenameDialogOpen(false);
+      setRenameRepositoryId(null);
+      setRenameRepositoryDefaultName('');
+      setRenameValue('');
+      fetchRepositories();
+    } catch (error: any) {
+      console.error('Rename error:', error);
+      toast.error(error?.message || 'Failed to rename repository');
+    }
+  };
+
   const fetchRepositories = async () => {
     try {
       console.log('Fetching repositories...');
@@ -182,19 +232,40 @@ export default function RepositoryList({
     }
   };
 
-  const runAnalysis = async (repoId: string): Promise<boolean> => {
+  const displayedRepos = showHidden
+    ? repositories
+    : repositories.filter(r => !r.isExcluded);
+
+  const hiddenCount = repositories.filter(r => r.isExcluded).length;
+
+  const runAnalysis = async (repoId: string, options?: { deepDive?: boolean }): Promise<boolean> => {
     try {
       const response = await fetch('/api/analyze/repository', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repositoryId: repoId }),
+        body: JSON.stringify({ repositoryId: repoId, deepDive: options?.deepDive }),
       });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        const message = errorText?.trim() || `Request failed (${response.status})`;
+        throw new Error(message);
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('text/event-stream')) {
+        const bodyText = await response.text().catch(() => '');
+        const message = bodyText?.trim() || 'Unexpected response from analysis endpoint';
+        throw new Error(message);
+      }
 
       if (!response?.body) throw new Error('No response body');
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let partialRead = '';
+      let didComplete = false;
+      let lastStatus: string | null = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -211,6 +282,7 @@ export default function RepositoryList({
             
             try {
               const parsed = JSON.parse(data);
+              lastStatus = parsed?.status ?? null;
               if (parsed?.status === 'completed') return true;
               if (parsed?.status === 'error') {
                 throw new Error(parsed?.message || 'Analysis failed');
@@ -226,6 +298,10 @@ export default function RepositoryList({
           }
         }
       }
+
+      if (!didComplete) {
+        throw new Error(lastStatus ? `Analysis did not complete (last status: ${lastStatus})` : 'Analysis did not complete');
+      }
       return true;
     } catch (error: any) {
       console.error(`Analysis failed for ${repoId}:`, error);
@@ -233,10 +309,10 @@ export default function RepositoryList({
     }
   };
 
-  const handleAnalyze = async (repoId: string) => {
+  const handleAnalyze = async (repoId: string, deepDive?: boolean) => {
     setAnalyzing(repoId);
     try {
-      await runAnalysis(repoId);
+      await runAnalysis(repoId, { deepDive });
       toast.success('Analysis completed!');
       fetchRepositories();
     } catch (error: any) {
@@ -249,7 +325,11 @@ export default function RepositoryList({
     handleAnalyze(repoId);
   };
 
-  const handleBulkAnalyze = async (skipConfirm = false, repoIdsToAnalyze?: string[]) => {
+  const handleBulkAnalyze = async (
+    skipConfirm = false,
+    repoIdsToAnalyze?: string[],
+    options?: { deepDive?: boolean }
+  ) => {
     // Refresh repositories to respect the latest hide/show changes before analyzing
     let currentRepos = repositories;
     try {
@@ -315,7 +395,7 @@ export default function RepositoryList({
 
       try {
         console.log(`Starting bulk analysis for: ${repo.name}`);
-        await runAnalysis(repo.id);
+        await runAnalysis(repo.id, { deepDive: options?.deepDive });
         completed++;
         console.log(`Completed bulk analysis for: ${repo.name} (${completed}/${toAnalyze.length})`);
         setRepoStatus(prev => ({ ...prev, [repo.id]: 'completed' }));
@@ -350,6 +430,152 @@ export default function RepositoryList({
     handleBulkAnalyze(true, failedIds);
   };
 
+  const handleDeepReanalyzeSelected = async () => {
+    if (selectedRepos.size === 0) {
+      toast.error('No repositories selected');
+      return;
+    }
+
+    if (bulkProgress) {
+      toast.info('Analysis already in progress');
+      return;
+    }
+
+    const ids = Array.from(selectedRepos);
+    await handleBulkAnalyze(false, ids, { deepDive: true });
+  };
+
+  const handleApplyAiTitlesSelected = async () => {
+    if (selectedRepos.size === 0) {
+      toast.error('No repositories selected');
+      return;
+    }
+
+    if (bulkApplyingTitles) {
+      toast.info('Bulk action already in progress');
+      return;
+    }
+
+    const selected = repositories.filter(r => selectedRepos.has(r.id));
+    const applicable = selected
+      .map(r => ({
+        id: r.id,
+        currentDisplayName: r.displayName ?? null,
+        aiTitle: r?.aiAnalysis?.displayTitle ? String(r.aiAnalysis.displayTitle).trim() : '',
+      }))
+      .filter(r => Boolean(r.aiTitle));
+
+    if (applicable.length === 0) {
+      toast.info('No AI titles available yet for the selected repositories');
+      return;
+    }
+
+    const overwriteCount = applicable.filter(r => Boolean(r.currentDisplayName) && r.currentDisplayName !== r.aiTitle).length;
+    if (!confirm(
+      `Apply AI titles to ${applicable.length} repository${applicable.length !== 1 ? 'ies' : ''}?` +
+        (overwriteCount > 0 ? ` This will overwrite ${overwriteCount} custom display name${overwriteCount !== 1 ? 's' : ''}.` : '')
+    )) {
+      return;
+    }
+
+    setBulkApplyingTitles(true);
+    const toastId = toast.loading(`Applying AI titles to ${applicable.length} repository${applicable.length !== 1 ? 'ies' : ''}...`);
+    try {
+      for (const repo of applicable) {
+        const response = await fetch('/api/repositories', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repositoryId: repo.id,
+            updates: { displayName: repo.aiTitle },
+          }),
+        });
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error((data as any)?.error || `Failed to update ${repo.id}`);
+        }
+      }
+
+      toast.success('AI titles applied', { id: toastId });
+      setSelectedRepos(new Set());
+      setSelectAll(false);
+      fetchRepositories();
+    } catch (error: any) {
+      console.error('Apply AI titles error:', error);
+      toast.error(error?.message || 'Failed to apply AI titles', { id: toastId });
+    } finally {
+      setBulkApplyingTitles(false);
+    }
+  };
+
+  const handleGenerateWhitepaper = async (repoId: string) => {
+    setGeneratingWhitepaper(repoId);
+    try {
+      const response = await fetch('/api/whitepaper/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repositoryId: repoId }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(errorText || `Request failed (${response.status})`);
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('text/event-stream')) {
+        throw new Error('Unexpected response from whitepaper endpoint');
+      }
+
+      if (!response?.body) throw new Error('No response body');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let partialRead = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        partialRead += decoder.decode(value ?? new Uint8Array(), { stream: true });
+        let lines = partialRead.split('\n');
+        partialRead = lines.pop() ?? '';
+
+        for (const line of lines ?? []) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') continue;
+
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed?.status === 'completed') {
+                toast.success('Whitepaper generated successfully!');
+                fetchRepositories();
+                return;
+              }
+              if (parsed?.status === 'error') {
+                throw new Error(parsed?.message || 'Whitepaper generation failed');
+              }
+            } catch (e: any) {
+              if (e.message !== 'Unexpected end of JSON input' && !e.message.includes('Whitepaper generation failed')) {
+                throw e;
+              }
+              if (e.message.includes('Whitepaper generation failed')) {
+                throw e;
+              }
+            }
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('Whitepaper generation error:', error);
+      toast.error(error?.message || 'Failed to generate whitepaper');
+    } finally {
+      setGeneratingWhitepaper(null);
+    }
+  };
+
   const handleCancelAnalysis = () => {
     if (confirm('Cancel the current analysis? Progress will be saved for completed repositories.')) {
       setCancelled(true);
@@ -372,7 +598,7 @@ export default function RepositoryList({
         throw new Error(data.error || 'Failed to update repository');
       }
 
-      toast.success(currentValue ? 'Removed from featured' : 'Added to featured');
+      toast.success(currentValue ? 'Removed from highlighted' : 'Added to highlighted');
       fetchRepositories();
     } catch (error: any) {
       console.error('Update error:', error);
@@ -405,14 +631,14 @@ export default function RepositoryList({
       newSelected.add(repoId);
     }
     setSelectedRepos(newSelected);
-    setSelectAll(newSelected.size === repositories.length);
+    setSelectAll(newSelected.size === displayedRepos.length);
   };
 
   const handleSelectAll = () => {
     if (selectAll) {
       setSelectedRepos(new Set());
     } else {
-      setSelectedRepos(new Set(repositories.map(r => r.id)));
+      setSelectedRepos(new Set(displayedRepos.map(r => r.id)));
     }
     setSelectAll(!selectAll);
   };
@@ -573,7 +799,26 @@ export default function RepositoryList({
   if (repositories?.length === 0) {
     return (
       <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-8">
-        <p className="text-slate-400 text-center">No repositories found. Click "Sync Now" to fetch your repositories.</p>
+        <p className="text-slate-400 text-center">No repositories found. Click &quot;Sync Now&quot; to fetch your repositories.</p>
+      </Card>
+    );
+  }
+
+  if (displayedRepos.length === 0 && hiddenCount > 0 && !previewOnly) {
+    return (
+      <Card className="bg-slate-800/50 backdrop-blur-sm border-slate-700 p-8">
+        <p className="text-slate-400 text-center">All repositories are hidden.</p>
+        <div className="mt-4 flex justify-center">
+          <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showHidden}
+              onChange={(e) => setShowHidden(Boolean(e.target.checked))}
+              className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-600 focus:ring-blue-500 focus:ring-offset-slate-900"
+            />
+            Show hidden repositories
+          </label>
+        </div>
       </Card>
     );
   }
@@ -656,7 +901,7 @@ export default function RepositoryList({
       </Card>
 
       <div className="flex items-center justify-between gap-4">
-        <h2 className="text-2xl font-bold text-white">Your Repositories ({repositories?.length ?? 0})</h2>
+        <h2 className="text-2xl font-bold text-white">Your Repositories ({displayedRepos.length}{hiddenCount > 0 && !previewOnly ? ` shown, ${hiddenCount} hidden` : ''})</h2>
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
             <input
@@ -667,9 +912,44 @@ export default function RepositoryList({
             />
             Select All
           </label>
+          {!previewOnly && hiddenCount > 0 && (
+            <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showHidden}
+                onChange={(e) => {
+                  setSelectedRepos(new Set());
+                  setSelectAll(false);
+                  setShowHidden(Boolean(e.target.checked));
+                }}
+                className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-blue-600 focus:ring-blue-500 focus:ring-offset-slate-900"
+              />
+              Show Hidden
+            </label>
+          )}
           {selectedRepos.size > 0 && (
             <>
               <span className="text-sm text-slate-400">({selectedRepos.size} selected)</span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleDeepReanalyzeSelected}
+                disabled={Boolean(bulkProgress)}
+                className="border-purple-600/50 text-purple-200 hover:bg-purple-600/10 h-8"
+              >
+                <Sparkles className="h-3 w-3 mr-1" />
+                Deep Re-analyze
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleApplyAiTitlesSelected}
+                disabled={bulkApplyingTitles}
+                className="border-slate-600 text-slate-200 hover:bg-slate-700 h-8"
+              >
+                <Pencil className="h-3 w-3 mr-1" />
+                Apply AI Titles
+              </Button>
               <Select value={selectedProjectId ?? ''} onValueChange={(value) => setSelectedProjectId(value === 'none' ? null : value)}>
                 <SelectTrigger className="w-[180px] h-8 border-blue-600/50 text-blue-300 hover:bg-blue-600/10">
                   <SelectValue placeholder="Move to group..." />
@@ -726,7 +1006,7 @@ export default function RepositoryList({
       </div>
       
       <div className="grid gap-4">
-        {repositories?.map((repo) => {
+        {displayedRepos.map((repo) => {
           // A repo is "Recently Updated" if its database updatedAt is AFTER the last session sync started
           // OR if it was updated in the last 5 minutes (for immediate feedback)
           const syncThreshold = lastSyncedAt ? new Date(lastSyncedAt).getTime() - 2000 : Date.now() - 5 * 60 * 1000;
@@ -754,7 +1034,7 @@ export default function RepositoryList({
                   />
                   <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
-                    <h3 className="text-lg font-semibold text-white truncate">{repo?.name}</h3>
+                    <h3 className="text-lg font-semibold text-white truncate">{repo?.displayName || repo?.aiAnalysis?.displayTitle || repo?.name}</h3>
                     {repoStatus[repo.id] && (
                       <Badge
                         variant="outline"
@@ -789,7 +1069,7 @@ export default function RepositoryList({
                     )}
                     {repo?.isFeatured && (
                       <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/50">
-                        Featured
+                        Highlighted
                       </Badge>
                     )}
                     {repo.projectId && getProjectName(repo.projectId) && (
@@ -915,14 +1195,35 @@ export default function RepositoryList({
                   <div className="flex flex-col gap-2 flex-shrink-0">
                     <Button
                       size="sm"
-                      onClick={() => handleAnalyze(repo?.id ?? '')}
+                      onClick={() => handleAnalyze(repo?.id ?? '', Boolean(repo?.aiAnalysis))}
                       disabled={analyzing === repo?.id}
                       className="bg-gradient-to-r from-purple-500 to-cyan-500 hover:from-purple-600 hover:to-cyan-600"
                     >
                       <Sparkles className="w-4 h-4 mr-1" />
                       {analyzing === repo?.id ? 'Analyzing...' : repo?.aiAnalysis ? 'Re-analyze' : 'Analyze'}
                     </Button>
-                    
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openRenameDialog(repo)}
+                      className="border-slate-600 text-slate-200 hover:bg-slate-700"
+                    >
+                      <Pencil className="w-4 h-4 mr-1" />
+                      Rename
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleGenerateWhitepaper(repo?.id ?? '')}
+                      disabled={generatingWhitepaper === repo?.id || !repo?.aiAnalysis}
+                      className="border-slate-600 text-slate-200 hover:bg-slate-700"
+                    >
+                      <Loader2 className={`w-4 h-4 mr-1 ${generatingWhitepaper === repo?.id ? 'animate-spin' : ''}`} />
+                      {generatingWhitepaper === repo?.id ? 'Generating...' : 'Whitepaper'}
+                    </Button>
+
                     <Button
                       size="sm"
                       variant="outline"
@@ -930,7 +1231,7 @@ export default function RepositoryList({
                       className="border-slate-600 text-slate-200 hover:bg-slate-700"
                     >
                       <Star className={`w-4 h-4 mr-1 ${repo?.isFeatured ? 'fill-current' : ''}`} />
-                      {repo?.isFeatured ? 'Unfeature' : 'Feature'}
+                      {repo?.isFeatured ? 'Unhighlight' : 'Highlight'}
                     </Button>
 
                     <a href={repo?.htmlUrl} target="_blank" rel="noopener noreferrer">
@@ -987,6 +1288,55 @@ export default function RepositoryList({
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               Create Group
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename (Display Name) Dialog */}
+      <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
+        <DialogContent className="bg-slate-800 border-slate-700">
+          <DialogHeader>
+            <DialogTitle className="text-white">Rename Repository (Display Name)</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              This only changes how the repo appears on your portfolio. GitHub repo names/URLs are unchanged.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label className="text-slate-300">Repository</Label>
+              <p className="text-sm text-slate-400">{renameRepositoryDefaultName}</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="repo-display-name" className="text-slate-300">Display name</Label>
+              <Input
+                id="repo-display-name"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                placeholder="e.g., Deterministic Knowledge Retrieval"
+                className="bg-slate-900 border-slate-700 text-white"
+              />
+              <p className="text-xs text-slate-500">Leave blank to clear the override.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsRenameDialogOpen(false);
+                setRenameRepositoryId(null);
+                setRenameRepositoryDefaultName('');
+                setRenameValue('');
+              }}
+              className="border-slate-600 text-slate-300 hover:bg-slate-700"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveRename}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>
