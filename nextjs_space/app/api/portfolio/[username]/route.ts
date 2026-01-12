@@ -35,23 +35,20 @@ export async function GET(
       );
     }
 
-    // Try loading from static JSON file first
-    const jsonPortfolio = await loadPortfolioJson(username);
-    if (jsonPortfolio) {
-      const repositories = jsonPortfolio.repositories ?? [];
-      const projects = jsonPortfolio.projects ?? [];
-      return NextResponse.json({
-        ...jsonPortfolio,
-        repositories,
-        projects,
-        ungroupedRepositories: jsonPortfolio.ungroupedRepositories ?? repositories,
-      });
-    }
-
-    // Find user by GitHub username from JSON storage
     const connection = await db.getGitHubConnection(SINGLE_USER_ID);
-
     if (!connection || connection.githubUsername !== username) {
+      const jsonPortfolio = await loadPortfolioJson(username);
+      if (jsonPortfolio) {
+        const repositories = jsonPortfolio.repositories ?? [];
+        const projects = jsonPortfolio.projects ?? [];
+        return NextResponse.json({
+          ...jsonPortfolio,
+          repositories,
+          projects,
+          ungroupedRepositories: jsonPortfolio.ungroupedRepositories ?? repositories,
+        });
+      }
+
       return NextResponse.json(
         { error: 'Portfolio not found' },
         { status: 404 }
@@ -79,6 +76,7 @@ export async function GET(
       id: repo.id,
       name: repo.name,
       fullName: repo.fullName,
+      displayName: repo.displayName,
       description: repo.description,
       language: repo.language,
       stargazersCount: repo.stargazersCount,
