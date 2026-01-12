@@ -69,6 +69,18 @@ From `nextjs_space/`:
 - `yarn test`
 - `yarn build`
 
+## Dashboard Features
+
+After signing in, the dashboard provides:
+
+- **Repository List**: View all synced repositories with AI analysis status
+- **Bulk Actions** (select multiple repos to enable):
+  - **Deep Re-analyze Selected**: Trigger deep AI analysis on selected repositories
+  - **Apply AI Titles**: Set `displayName` from `aiAnalysis.displayTitle` for selected repos
+- **Curate Portfolio**: Toggle `isExcluded` to hide/show repos, toggle `isFeatured` to highlight
+- **Highlighted Repo's**: Special section showing featured repositories with enriched content
+- **Re-analyze**: Manual re-analysis always runs in deep dive mode for richer insights
+
 ## Manual smoke checks
 
 - Home loads: `/`
